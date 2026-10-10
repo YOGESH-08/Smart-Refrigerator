@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block title %}Overview | Smart Refrigerator{% endblock %}
+{% block page_title %}Overview{% endblock %}
+
+{% block content %}
+<section class="page-grid overview-page" data-page="overview">
+  <div class="status-header panel">
+    <div>
+      <div class="eyebrow">System status</div>
+      <h2 id="system-state">Normal</h2>
+    </div>
+    <div class="status-meta">
+      <span class="pill green" id="device-status-pill">Online</span>
+      <span class="muted">Last seen: <strong id="last-seen">--</strong></span>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <article class="panel kpi-card">
+      <div class="eyebrow">Temperature</div>
+      <div class="kpi-value"><span id="temperature-value">--</span><span class="unit">°C</span></div>
+      <div class="trend up" id="temperature-trend">--</div>
+      <svg class="sparkline" viewBox="0 0 100 36" preserveAspectRatio="none"><path id="temp-spark" d=""></path></svg>
+    </article>
+    <article class="panel kpi-card">
+      <div class="eyebrow">Gas</div>
+      <div class="kpi-value"><span id="gas-value">--</span><span class="unit">VOC</span></div>
+      <div class="trend neutral" id="gas-trend">--</div>
+      <svg class="sparkline" viewBox="0 0 100 36" preserveAspectRatio="none"><path id="gas-spark" d=""></path></svg>
+    </article>
+    <article class="panel kpi-card">
+      <div class="eyebrow">Inventory</div>
+      <div class="kpi-value"><span id="weight-value">--</span><span class="unit">kg</span></div>
+      <div class="trend down" id="weight-trend">--</div>
+      <svg class="sparkline" viewBox="0 0 100 36" preserveAspectRatio="none"><path id="weight-spark" d=""></path></svg>
+    </article>
+    <article class="panel kpi-card">
+      <div class="eyebrow">Door</div>
+      <div class="kpi-value"><span id="door-value">Closed</span></div>
+      <div class="trend neutral" id="door-trend">--</div>
+      <svg class="sparkline" viewBox="0 0 100 36" preserveAspectRatio="none"><path id="door-spark" d=""></path></svg>
+    </article>
+  </div>
+
+  <div class="main-panel-grid">
+    <section class="panel chart-panel">
+      <div class="panel-header">
+        <h3>Temperature &amp; gas over time</h3>
+        <div class="range-selector" aria-label="Time range selector">
+          <button class="range-pill active" data-range="15m">15m</button>
+          <button class="range-pill" data-range="1h">1h</button>
+          <button class="range-pill" data-range="6h">6h</button>
+          <button class="range-pill" data-range="24h">24h</button>
+        </div>
+      </div>
+      <canvas id="overview-chart" height="240"></canvas>
+    </section>
+
+    <section class="panel side-panel">
+      <div class="panel-header">
+        <h3>Door timeline</h3>
+      </div>
+      <div class="timeline" id="door-timeline"></div>
+    </section>
+  </div>
+
+  <div class="two-panel-grid">
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Recent events</h3>
+      </div>
+      <ul class="event-list" id="event-list"></ul>
+    </section>
+    <section class="panel">
+      <div class="panel-header">
+        <h3>Alert summary</h3>
+      </div>
+      <div class="alert-summary" id="alert-summary"></div>
+    </section>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Smart Refrigerator{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+    <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <div class="brand-mark">SR</div>
+          <div>
+            <div class="eyebrow">Operations</div>
+            <div class="brand-name">Smart Fridge</div>
+          </div>
+        </div>
+        <nav class="nav" aria-label="main navigation">
+          <a href="/" class="nav-item{% if request.path == '/' %} active{% endif %}">Overview</a>
+          <a href="/analytics" class="nav-item{% if request.path == '/analytics' %} active{% endif %}">Analytics</a>
+          <a href="/alerts" class="nav-item{% if request.path == '/alerts' %} active{% endif %}">Alerts</a>
+          <a href="/device" class="nav-item{% if request.path == '/device' %} active{% endif %}">Device &amp; Settings</a>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="status-badge" id="connection-badge">Live</div>
+          <button class="ghost-button" id="theme-toggle" aria-label="Toggle color theme">Dark mode</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow">Monitoring</div>
+            <h1>{% block page_title %}Overview{% endblock %}</h1>
+          </div>
+          <div class="topbar-meta">
+            <span class="last-updated" id="last-updated">Waiting for data</span>
+            <button class="primary-button" id="refresh-button" type="button">Refresh</button>
+          </div>
+        </header>
+        <div class="aria-live" aria-live="polite" aria-atomic="true" id="aria-live-region"></div>
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
+  </body>
+</html>

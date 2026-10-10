@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+
+{% block title %}Analytics | Smart Refrigerator{% endblock %}
+{% block page_title %}Analytics{% endblock %}
+
+{% block content %}
+<section class="page-grid analytics-page" data-page="analytics">
+  <div class="kpi-grid analytics-grid">
+    <article class="panel kpi-card">
+      <div class="eyebrow">Temperature min</div>
+      <div class="kpi-value"><span id="temp-min">--</span><span class="unit">°C</span></div>
+    </article>
+    <article class="panel kpi-card">
+      <div class="eyebrow">Temperature avg</div>
+      <div class="kpi-value"><span id="temp-avg">--</span><span class="unit">°C</span></div>
+    </article>
+    <article class="panel kpi-card">
+      <div class="eyebrow">Temperature max</div>
+      <div class="kpi-value"><span id="temp-max">--</span><span class="unit">°C</span></div>
+    </article>
+    <article class="panel kpi-card">
+      <div class="eyebrow">Door open time</div>
+      <div class="kpi-value"><span id="door-duration">--</span><span class="unit">min</span></div>
+    </article>
+  </div>
+
+  <div class="main-panel-grid">
+    <section class="panel chart-panel">
+      <div class="panel-header">
+        <h3>Door-open duration trend</h3>
+      </div>
+      <canvas id="door-chart" height="220"></canvas>
+    </section>
+    <section class="panel chart-panel">
+      <div class="panel-header">
+        <h3>Gas baseline vs current</h3>
+      </div>
+      <canvas id="gas-chart" height="220"></canvas>
+    </section>
+  </div>
+
+  <section class="panel chart-panel full-width">
+    <div class="panel-header">
+      <h3>Weight over time</h3>
+    </div>
+    <canvas id="weight-chart" height="220"></canvas>
+  </section>
+</section>
+{% endblock %}

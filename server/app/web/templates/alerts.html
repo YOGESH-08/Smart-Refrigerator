@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block title %}Alerts | Smart Refrigerator{% endblock %}
+{% block page_title %}Alerts{% endblock %}
+
+{% block content %}
+<section class="page-grid alerts-page" data-page="alerts">
+  <section class="panel table-panel">
+    <div class="panel-header">
+      <h3>Alert log</h3>
+      <div class="toolbar">
+        <select id="alert-status-filter" aria-label="Alert status filter">
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="acknowledged">Acknowledged</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <button class="secondary-button" id="export-alerts" type="button">Export CSV</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Alert</th>
+            <th>Status</th>
+            <th>Triggered</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="alerts-table-body"></tbody>
+      </table>
+    </div>
+  </section>
+</section>
+{% endblock %}
