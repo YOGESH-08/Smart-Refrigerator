@@ -30,8 +30,14 @@ namespace {
   uint32_t mute_until_ms = 0;
   bool touch_was_pressed = false;
   uint32_t last_command_poll_ms = 0;
+  uint32_t last_network_action_ms = 0;
+  uint32_t network_backoff_ms = 500UL;
   uint32_t last_rfid_wait_log_ms = 0;
   bool rfid_reader_ok = false;
+  bool pending_touch_ack = false;
+  bool send_rfid_next = true;
+  uint32_t dropped_readings_since_log = 0;
+  uint32_t last_drop_log_ms = 0;
   SensorReadings current_sample{};
   FridgeState current_state = FridgeState::NORMAL;
   ActuatorStates current_actuators{};
@@ -40,6 +46,12 @@ namespace {
   String rfid_queue[RFID_QUEUE_CAPACITY];
   size_t rfid_head = 0;
   size_t rfid_count = 0;
+
+  bool isRecognizedRfidVersion(byte version) {
+    // Versions reported by the MFRC522 library for known silicon/compatible clones.
+    // 0x00, 0xFF, and undocumented values (including 0x82) are not proof of a working reader.
+    return version == 0x88 || version == 0x90 || version == 0x91 || version == 0x92;
+  }
 
   void configureWatchdog() {
 #if ESP_IDF_VERSION_MAJOR >= 5
@@ -61,7 +73,14 @@ namespace {
   }
   void enqueueReading(const SensorReadings& sample, uint32_t door_open_seconds) {
     if (ring_count == MAX_OFFLINE_RING_BUFFER) {
-      Serial.println("Offline telemetry queue full; dropping oldest reading");
+      ++dropped_readings_since_log;
+      const uint32_t now = millis();
+      if (now - last_drop_log_ms >= 30000UL) {
+        Serial.printf("Offline telemetry queue full; dropped %lu old readings in the last 30s\n",
+                      static_cast<unsigned long>(dropped_readings_since_log));
+        dropped_readings_since_log = 0;
+        last_drop_log_ms = now;
+      }
       ring_head = (ring_head + 1) % MAX_OFFLINE_RING_BUFFER;
       --ring_count;
     }
@@ -78,9 +97,8 @@ namespace {
     const bool touch_pressed = sensors.touchPressed();
     if (touch_pressed && !touch_was_pressed && alert) {
       mute_until_ms = now_ms + ALARM_MUTE_MS;
-      const bool acknowledged = network.acknowledgeCurrentAlert();
-      Serial.printf("Touch alert: buzzer muted for 30s; current alert acknowledgement %s\n",
-                    acknowledged ? "sent" : "failed (device offline or request error)");
+      pending_touch_ack = true;
+      Serial.println("Touch alert: buzzer muted for 30s; alert acknowledgement queued");
     }
     touch_was_pressed = touch_pressed;
     if (!alert || (mute_until_ms && static_cast<int32_t>(now_ms - mute_until_ms) >= 0)) {
@@ -108,13 +126,18 @@ namespace {
   }
 
   void scanRfidCard() {
-    if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
+    if (!rfid.PICC_IsNewCardPresent()) {
       const uint32_t now = millis();
       if (now - last_rfid_wait_log_ms >= 5000UL) {
         last_rfid_wait_log_ms = now;
-        Serial.printf("RFID %s; waiting for card (RC522 pins SS=%u SCK=18 MOSI=23 MISO=19 RST=%u)\n",
-                      rfid_reader_ok ? "ready" : "NOT DETECTED", RFID_SS_PIN, RFID_RST_PIN);
+        Serial.printf("RFID %s; NO CARD PRESENT; hold a 13.56 MHz tag over the reader antenna (SS=%u SCK=18 MOSI=23 MISO=19 RST=%u)\n",
+                      rfid_reader_ok ? "reader ready" : "READER NOT DETECTED", RFID_SS_PIN, RFID_RST_PIN);
       }
+      return;
+    }
+    Serial.println("RFID: card detected; reading UID...");
+    if (!rfid.PICC_ReadCardSerial()) {
+      Serial.println("RFID: UID read failed; keep the tag steady and check 3.3V, GND, and SPI wiring");
       return;
     }
     String uid;
@@ -124,7 +147,10 @@ namespace {
       uid += String(rfid.uid.uidByte[index], HEX);
     }
     uid.toUpperCase();
-    Serial.printf("RFID UID: %s\n", uid.c_str());
+    Serial.printf("RFID UID READ SUCCESS: %s | type=", uid.c_str());
+    Serial.print(MFRC522::PICC_GetTypeName(rfid.PICC_GetType(rfid.uid.sak)));
+    Serial.printf(" | bytes=%u\n", static_cast<unsigned>(rfid.uid.size));
+    Serial.flush();
     if (rfid_count == RFID_QUEUE_CAPACITY) {
       rfid_head = (rfid_head + 1) % RFID_QUEUE_CAPACITY;
       --rfid_count;
@@ -132,16 +158,20 @@ namespace {
     }
     rfid_queue[(rfid_head + rfid_count) % RFID_QUEUE_CAPACITY] = uid;
     ++rfid_count;
+    Serial.printf("RFID: UID queued for dashboard upload; pending scans=%u\n",
+                  static_cast<unsigned>(rfid_count));
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
   }
 
-  void flushOneRfidScan() {
-    if (!network.isConnected() || rfid_count == 0) return;
+  bool flushOneRfidScan() {
+    if (!network.isConnected() || rfid_count == 0) return false;
     if (network.sendRfidScan(rfid_queue[rfid_head])) {
       rfid_head = (rfid_head + 1) % RFID_QUEUE_CAPACITY;
       --rfid_count;
+      return true;
     }
+    return false;
   }
 
   void reconnectWiFi(uint32_t now_ms) {
@@ -156,15 +186,17 @@ namespace {
     wifi_retry_ms = next_retry_ms < WIFI_RETRY_MAX_MS ? next_retry_ms : WIFI_RETRY_MAX_MS;
   }
 
-  void flushOneReading() {
+  bool flushOneReading() {
     if (!network.isConnected() || ring_count == 0) {
-      return;
+      return false;
     }
     if (network.sendReading(ring_buffer[ring_head], ring_door_seconds[ring_head],
                             (millis() - boot_ms) / 1000UL)) {
       ring_head = (ring_head + 1) % MAX_OFFLINE_RING_BUFFER;
       --ring_count;
+      return true;
     }
+    return false;
   }
 }
 
@@ -176,6 +208,8 @@ void setup() {
   network.begin();
   SPI.begin(18, 19, 23, RFID_SS_PIN);
   rfid.PCD_Init();
+  rfid.PCD_SetAntennaGain(MFRC522::RxGain_max);
+  rfid.PCD_AntennaOn();
   delay(4);
   const byte rfid_version = rfid.PCD_ReadRegister(MFRC522::VersionReg);
   last_wifi_attempt_ms = boot_ms;
@@ -184,9 +218,10 @@ void setup() {
   Serial.printf("Pins: DS18B20=GPIO%u MQ135_AO=GPIO%u REED=GPIO%u TTP223=GPIO%u | RC522 SS/SDA=GPIO%u SCK=GPIO18 MOSI=GPIO23 MISO=GPIO19 RST=GPIO%u | FAN=GPIO%u BUZZER=GPIO%u RED_LED=GPIO%u GREEN_LED=GPIO%u\n",
                 DS18B20_PIN, MQ135_AOUT_PIN, REED_SWITCH_PIN, TTP223_PIN,
                 RFID_SS_PIN, RFID_RST_PIN, FAN_PIN, BUZZER_PIN, RED_LED_PIN, GREEN_LED_PIN);
+  rfid_reader_ok = isRecognizedRfidVersion(rfid_version);
   Serial.printf("RC522 version register: 0x%02X%s\n", rfid_version,
-                (rfid_version == 0x00 || rfid_version == 0xFF) ? " (reader not detected: check 3.3V, GND, and SPI wiring)" : " (reader detected)");
-  rfid_reader_ok = rfid_version != 0x00 && rfid_version != 0xFF;
+                rfid_reader_ok ? " (recognized response; card reading still needs testing)"
+                               : " (unrecognized/no response; check 3.3V, GND, and SPI contacts)");
 }
 
 void loop() {
@@ -225,17 +260,42 @@ void loop() {
   }
 
   applyLocalControl(now_ms);
-  if (now_ms - last_command_poll_ms >= 1000UL) {
-    last_command_poll_ms = now_ms;
-    if (network.pollMuteCommand()) {
-      mute_until_ms = now_ms + ALARM_MUTE_MS;
-      Serial.println("Dashboard command: buzzer muted for 30s");
-      applyLocalControl(now_ms);
+  scanRfidCard();
+  reconnectWiFi(now_ms);
+  const bool command_poll_due = now_ms - last_command_poll_ms >= 2000UL;
+  const bool network_work_pending = pending_touch_ack || command_poll_due || rfid_count > 0 || ring_count > 0;
+  if (network.isConnected() && network_work_pending &&
+      static_cast<int32_t>(now_ms - last_network_action_ms) >= 0) {
+    last_network_action_ms = now_ms;
+    bool failed = false;
+    if (pending_touch_ack) {
+      if (network.acknowledgeCurrentAlert()) pending_touch_ack = false;
+      else failed = true;
+    } else if (command_poll_due) {
+      last_command_poll_ms = now_ms;
+      bool mute_command = false;
+      failed = !network.pollMuteCommand(mute_command);
+      if (mute_command) {
+        mute_until_ms = now_ms + ALARM_MUTE_MS;
+        Serial.println("Dashboard command: buzzer muted for 30s");
+        applyLocalControl(now_ms);
+      }
+    } else if (rfid_count > 0 && ring_count > 0) {
+      if (send_rfid_next) failed = !flushOneRfidScan();
+      else failed = !flushOneReading();
+      send_rfid_next = !send_rfid_next;
+    } else if (rfid_count > 0) {
+      failed = !flushOneRfidScan();
+    } else if (ring_count > 0) {
+      failed = !flushOneReading();
+    }
+    if (failed) {
+      network_backoff_ms = network_backoff_ms < 4000UL ? network_backoff_ms * 2UL : 8000UL;
+      last_network_action_ms = now_ms + network_backoff_ms;
+    } else {
+      network_backoff_ms = 500UL;
+      last_network_action_ms = now_ms + NETWORK_ACTION_INTERVAL_MS;
     }
   }
-  scanRfidCard();
-  flushOneRfidScan();
-  reconnectWiFi(now_ms);
-  flushOneReading();
   esp_task_wdt_reset();
 }

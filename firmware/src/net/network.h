@@ -32,7 +32,8 @@ class NetworkClient {
     return postJson(endpoint, payload, "Touch alert acknowledgement");
   }
 
-  bool pollMuteCommand() {
+  bool pollMuteCommand(bool& mute) {
+    mute = false;
     if (!isConnected()) return false;
     String endpoint = API_ENDPOINT;
     const int suffix = endpoint.lastIndexOf("/readings");
@@ -41,11 +42,11 @@ class NetworkClient {
     endpoint += "/device/commands?device_id=";
     endpoint += DEVICE_ID;
     HTTPClient client;
-    client.setTimeout(1000);
+    client.setConnectTimeout(1500);
+    client.setTimeout(1500);
     if (!client.begin(endpoint)) return false;
     client.addHeader("X-API-Key", API_KEY);
     const int status = client.GET();
-    bool mute = false;
     if (status == 200) {
       StaticJsonDocument<256> response;
       if (deserializeJson(response, client.getString()) == DeserializationError::Ok) {
@@ -55,7 +56,7 @@ class NetworkClient {
       }
     }
     client.end();
-    return mute;
+    return status == 200;
   }
 
   bool sendReading(const SensorReadings& reading, uint32_t door_open_seconds, uint32_t uptime_s) {
@@ -91,6 +92,7 @@ class NetworkClient {
     payload["uptime_s"] = uptime_s;
 
     HTTPClient client;
+    client.setConnectTimeout(1500);
     client.setTimeout(3000);
     if (!client.begin(API_ENDPOINT)) {
       Serial.println("HTTP client could not initialize endpoint");
@@ -125,6 +127,7 @@ class NetworkClient {
     payload["uid"] = uid;
     payload["firmware_version"] = FIRMWARE_VERSION;
     HTTPClient client;
+    client.setConnectTimeout(1500);
     client.setTimeout(3000);
     if (!client.begin(endpoint)) return false;
     client.addHeader("Content-Type", "application/json");
@@ -139,6 +142,7 @@ class NetworkClient {
 
   bool postJson(const String& endpoint, JsonDocument& payload, const char* label) {
     HTTPClient client;
+    client.setConnectTimeout(1500);
     client.setTimeout(1500);
     if (!client.begin(endpoint)) return false;
     client.addHeader("Content-Type", "application/json");
