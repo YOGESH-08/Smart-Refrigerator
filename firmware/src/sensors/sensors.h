@@ -13,6 +13,8 @@ struct SensorReadings {
   bool gas_valid = false;
   bool door_open = false;
   bool silence_pressed = false;
+  bool touch_pressed = false;
+  bool rfid_reader_ok = false;
   bool door_sensor_verified = false;
   bool alarm_active = false;
   bool alarm_muted = false;
@@ -58,6 +60,7 @@ class SensorSubsystem {
     result.gas_valid = gas > 1 && gas < 4094;
     result.door_open = digitalRead(REED_SWITCH_PIN) == LOW;
     result.silence_pressed = touchPressed();
+    result.touch_pressed = result.silence_pressed;
     return result;
   }
 

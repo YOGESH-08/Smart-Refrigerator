@@ -535,6 +535,24 @@ select, input {
   padding: 20px 0;
 }
 
+.pin-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.pin-map-grid > div {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.pin-map-grid span, .pin-map-grid code { color: var(--muted); font-size: 12px; }
+.pin-map-grid strong { font-size: 15px; }
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;

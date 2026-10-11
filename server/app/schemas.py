@@ -13,6 +13,8 @@ class ReadingPayload(BaseModel):
     gas_adc_raw: Optional[int] = Field(default=None, ge=0, le=4095)
     weight_kg: Optional[float] = Field(default=None, ge=0.0, le=200.0)
     door_open: bool = False
+    touch_pressed: Optional[bool] = None
+    rfid_reader_ok: Optional[bool] = None
     door_open_seconds: Optional[float] = Field(default=None, ge=0.0)
     battery_mv: Optional[float] = Field(default=None, ge=0.0, le=50000.0)
     wifi_rssi_dbm: Optional[int] = Field(default=None, ge=-120, le=0)

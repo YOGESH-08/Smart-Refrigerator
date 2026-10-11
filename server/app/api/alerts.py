@@ -57,4 +57,22 @@ def acknowledge_alert(alert_id: int):
         updated = repo.acknowledge_alert(alert_id, ack.acknowledged_by)
     except ValueError:
         return jsonify({"error": "Not found", "code": "alert_missing", "details": {"message": "Alert does not exist"}}), 404
+    repo.queue_device_command(updated["device_id"], "mute_buzzer")
+    return jsonify({"data": updated, "meta": {"status": "acknowledged", "buzzer_mute_queued": True}}), 200
+
+
+@alerts_bp.post("/alerts/ack-current")
+def acknowledge_current_alert():
+    payload = request.get_json(silent=True) or {}
+    if request.headers.get("X-API-Key") != current_app.config["API_KEY"]:
+        return jsonify({"error": "Unauthorized"}), 401
+    device_id = str(payload.get("device_id", "")).strip()
+    if not device_id:
+        return jsonify({"error": "device_id is required"}), 400
+    repo = current_app.extensions["repo"]
+    active = [item for item in repo.get_alerts(status="active") if item["device_id"] == device_id]
+    if not active:
+        return jsonify({"data": None, "meta": {"status": "no_active_alert"}}), 200
+    alert = max(active, key=lambda item: item["last_triggered"])
+    updated = repo.acknowledge_alert(alert["id"], "touch_sensor")
     return jsonify({"data": updated, "meta": {"status": "acknowledged"}}), 200

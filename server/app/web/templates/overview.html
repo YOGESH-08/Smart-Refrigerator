@@ -42,8 +42,9 @@
       <div class="panel-header"><h3>Sensor health &amp; alarm</h3></div>
       <ul class="event-list">
         <li><span>Temperature sensor</span><strong id="temperature-health">--</strong></li>
-        <li><span>Alarm threshold</span><strong id="temperature-threshold">22.0 °C</strong></li>
+        <li><span>Alarm threshold</span><strong id="temperature-threshold">--</strong></li>
         <li><span>MQ-135 sensor</span><strong id="gas-health">--</strong></li>
+        <li><span>Touch mute (GPIO14)</span><strong id="touch-reading">--</strong></li>
         <li><span>Door sensor</span><strong id="door-health">SENSOR UNVERIFIED</strong></li>
         <li><span>Temperature alarm</span><strong id="alarm-state">--</strong></li>
         <li><span>Buzzer mute</span><strong id="mute-state">--</strong></li>
@@ -59,6 +60,18 @@
       </ul>
     </section>
   </div>
+
+  <section class="panel pin-map-panel">
+    <div class="panel-header"><h3>Live readings &amp; ESP32 pin map</h3><span class="muted">ESP32 DevKit V1</span></div>
+    <div class="pin-map-grid">
+      <div><span>DS18B20 temperature</span><strong id="pin-temperature">--</strong><code>DATA → GPIO4</code></div>
+      <div><span>MQ-135 gas</span><strong id="pin-gas">--</strong><code>AO → GPIO34 (ADC)</code></div>
+      <div><span>Reed switch</span><strong id="pin-door">--</strong><code>OUT → GPIO27</code></div>
+      <div><span>TTP223 touch</span><strong id="pin-touch">--</strong><code>OUT → GPIO14</code></div>
+      <div><span>RC522 RFID</span><strong id="rfid-reader-state">No device report</strong><code>SDA/SS 5 · SCK 18 · MOSI 23 · MISO 19 · RST 22</code></div>
+      <div><span>Outputs</span><strong id="pin-outputs">--</strong><code>Fan 26 · Buzzer 13 · Red LED 15 · Green LED 21</code></div>
+    </div>
+  </section>
 
   <div class="main-panel-grid">
     <section class="panel chart-panel">

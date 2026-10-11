@@ -34,6 +34,8 @@ class Repository:
                     gas_adc_raw INTEGER,
                     weight_kg REAL,
                     door_open INTEGER NOT NULL,
+                    touch_pressed INTEGER,
+                    rfid_reader_ok INTEGER,
                     door_open_seconds REAL,
                     battery_mv REAL,
                     wifi_rssi_dbm INTEGER,
@@ -83,6 +85,7 @@ class Repository:
                 "CREATE TABLE IF NOT EXISTS rfid_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, uid TEXT NOT NULL, item_name TEXT, firmware_version TEXT, timestamp TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_rfid_scans_timestamp ON rfid_scans(timestamp DESC)")
+            conn.execute("CREATE TABLE IF NOT EXISTS device_commands (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, command TEXT NOT NULL, created_at TEXT NOT NULL)")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS rfid_items (uid TEXT PRIMARY KEY, item_name TEXT, quantity INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)"
             )
@@ -156,6 +159,8 @@ class Repository:
             conn.execute("ALTER TABLE readings ADD COLUMN door_open_seconds REAL")
         additions = {
             "gas_adc_raw": "INTEGER",
+            "touch_pressed": "INTEGER",
+            "rfid_reader_ok": "INTEGER",
             "temperature_sensor_ok": "INTEGER",
             "gas_sensor_ok": "INTEGER",
             "door_sensor_verified": "INTEGER NOT NULL DEFAULT 0",
@@ -197,10 +202,10 @@ class Repository:
                 """
                 INSERT INTO readings (
                         device_id, timestamp, temperature_c, humidity_pct, gas_voc, gas_adc_raw, weight_kg,
-                        door_open, door_open_seconds, battery_mv, wifi_rssi_dbm, firmware_version, uptime_s,
+                        door_open, touch_pressed, rfid_reader_ok, door_open_seconds, battery_mv, wifi_rssi_dbm, firmware_version, uptime_s,
                         temperature_sensor_ok, gas_sensor_ok, door_sensor_verified, alarm_active, alarm_muted,
                         mute_remaining_s, fan_on, red_led_on, green_led_on, buzzer_on, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["device_id"],
@@ -211,6 +216,8 @@ class Repository:
                     payload.get("gas_adc_raw"),
                     payload.get("weight_kg"),
                     int(bool(payload.get("door_open", False))),
+                    _optional_bool(payload.get("touch_pressed")),
+                    _optional_bool(payload.get("rfid_reader_ok")),
                     payload.get("door_open_seconds"),
                     payload.get("battery_mv"),
                     payload.get("wifi_rssi_dbm"),
@@ -377,11 +384,12 @@ class Repository:
                 conn.execute(
                     """
                     UPDATE alerts
-                    SET severity = ?, status = ?, message = ?, last_triggered = ?, acknowledged_at = COALESCE(acknowledged_at, ?), resolved_at = ?
+                    SET severity = ?, status = CASE WHEN ? = 'active' AND status = 'acknowledged' THEN status ELSE ? END, message = ?, last_triggered = ?, acknowledged_at = COALESCE(acknowledged_at, ?), resolved_at = ?
                     WHERE id = ?
                     """,
                     (
                         alert["severity"],
+                        alert["status"],
                         alert["status"],
                         alert["message"],
                         alert["last_triggered"],
@@ -424,6 +432,17 @@ class Repository:
                 (current, acknowledged_by, alert_id),
             )
             return dict(conn.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone())
+
+    def queue_device_command(self, device_id: str, command: str) -> None:
+        with self.get_connection() as conn:
+            conn.execute("INSERT INTO device_commands(device_id, command, created_at) VALUES (?, ?, ?)", (device_id, command, _utc_now_iso()))
+
+    def consume_device_commands(self, device_id: str) -> list[str]:
+        with self.get_connection() as conn:
+            rows = conn.execute("SELECT id, command FROM device_commands WHERE device_id = ? ORDER BY id", (device_id,)).fetchall()
+            if rows:
+                conn.executemany("DELETE FROM device_commands WHERE id = ?", [(row["id"],) for row in rows])
+            return [row["command"] for row in rows]
 
     def get_device_status(self, device_id: str | None = None) -> dict[str, Any]:
         with self.get_connection() as conn:

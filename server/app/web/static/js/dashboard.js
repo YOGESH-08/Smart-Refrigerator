@@ -7,8 +7,9 @@ const page = document.querySelector('[data-page]');
 
 const state = {
   intervalId: null,
+  liveIntervalId: null,
   retryDelay: 2000,
-  pollMs: 2000,
+  pollMs: 5000,
   charts: {},
   settings: {},
 };
@@ -70,6 +71,54 @@ const renderRFIDInventory = (items = []) => {
       <button class="secondary-button" type="submit">Save</button>
     </form>
   `).join('');
+};
+
+const renderRFIDScans = (scans = []) => {
+  const scanList = document.getElementById('rfid-scan-list');
+  if (!scanList) return;
+  scanList.innerHTML = scans.length ? scans.slice(0, 8).map((scan) =>
+    `<li><span>${escapeHtml(scan.item_name || 'Unmapped tag')} · ${isoToLocal(scan.timestamp)}${scan.quantity ? ` · count ${scan.quantity}` : ''}</span><strong>${escapeHtml(scan.uid)}</strong></li>`
+  ).join('') : '<li class="empty-state">No RFID scans recorded</li>';
+};
+
+const renderLiveReading = (latest) => {
+  if (!latest) return;
+  const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
+  const temperature = latest.temperature_c == null ? null : Number(latest.temperature_c);
+  const gas = latest.gas_adc_raw == null ? null : Number(latest.gas_adc_raw);
+  const doorOpen = Boolean(latest.door_open);
+  const doorVerified = Boolean(latest.door_sensor_verified);
+  const threshold = Number(state.settings.temperature_high_c);
+  const tempAlert = temperature != null && Number.isFinite(threshold) && temperature > threshold;
+  const temperatureHealthy = latest.temperature_sensor_ok !== false && latest.temperature_sensor_ok !== 0 && temperature != null;
+  const gasHealthy = latest.gas_sensor_ok !== false && latest.gas_sensor_ok !== 0 && gas != null;
+  setText('temperature-value', temperature == null ? '--' : temperature.toFixed(1));
+  setText('gas-value', gas == null ? '--' : gas.toFixed(0));
+  setText('door-value', doorVerified ? (doorOpen ? 'Open' : 'Closed') : 'Unverified');
+  setText('last-seen', isoToLocal(latest.timestamp));
+  setText('temperature-health', temperatureHealthy ? 'OK' : 'SENSOR ERROR');
+  setText('temperature-threshold', Number.isFinite(threshold) ? `${threshold.toFixed(1)} °C` : '--');
+  setText('gas-health', gasHealthy ? 'OK' : 'SENSOR ERROR');
+  setText('touch-reading', latest.touch_pressed == null ? 'No device report' : (latest.touch_pressed ? 'PRESSED' : 'Released'));
+  setText('door-health', doorVerified ? (doorOpen ? 'OPEN' : 'CLOSED') : 'SENSOR UNVERIFIED');
+  setText('alarm-state', latest.alarm_active ? 'ACTIVE' : (!temperatureHealthy ? 'UNKNOWN (sensor error)' : 'CLEAR'));
+  setText('mute-state', latest.alarm_muted ? `MUTED · ${Number(latest.mute_remaining_s || 0)}s remaining` : 'NOT MUTED');
+  setText('fan-state', latest.fan_on == null ? 'No device report' : (latest.fan_on ? 'ON' : 'OFF'));
+  setText('red-led-state', latest.red_led_on == null ? 'No device report' : (latest.red_led_on ? 'ON' : 'OFF'));
+  setText('green-led-state', latest.green_led_on == null ? 'No device report' : (latest.green_led_on ? 'ON' : 'OFF'));
+  setText('buzzer-state', latest.buzzer_on == null ? 'No device report' : (latest.buzzer_on ? 'ON' : 'OFF'));
+  setText('pin-temperature', temperature == null ? 'Unavailable' : `${temperature.toFixed(1)} °C`);
+  setText('pin-gas', gas == null ? 'Unavailable' : `${gas.toFixed(0)} / 4095 ADC`);
+  setText('pin-door', doorVerified ? (doorOpen ? 'Open' : 'Closed') : 'Unverified');
+  setText('pin-touch', latest.touch_pressed == null ? 'No device report' : (latest.touch_pressed ? 'Pressed' : 'Released'));
+  setText('rfid-reader-state', latest.rfid_reader_ok == null ? 'No device report' : (latest.rfid_reader_ok ? 'Reader detected · ready for tag' : 'Reader not detected'));
+  setText('pin-outputs', `Fan ${latest.fan_on == null ? '—' : (latest.fan_on ? 'ON' : 'OFF')} · Buzzer ${latest.buzzer_on == null ? '—' : (latest.buzzer_on ? 'ON' : 'OFF')}`);
+  setText('system-state', !temperatureHealthy ? 'Temperature sensor error' : (tempAlert ? 'Warning' : 'Normal'));
+  const status = document.getElementById('device-status-pill');
+  if (status) {
+    status.textContent = !temperatureHealthy ? 'Sensor error' : (doorVerified ? (doorOpen ? 'Door open' : 'Door closed') : 'Door unverified');
+    status.className = `pill ${!temperatureHealthy ? 'red' : (doorOpen && doorVerified ? 'amber' : 'green')}`;
+  }
 };
 
 document.addEventListener('submit', async (event) => {
@@ -155,8 +204,9 @@ const renderOverview = (payload) => {
   document.getElementById('device-status-pill').className = `pill ${!temperatureHealthy ? 'red' : (doorOpen && doorVerified ? 'amber' : 'green')}`;
   const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   setText('temperature-health', temperatureHealthy ? 'OK' : 'SENSOR ERROR');
-  setText('temperature-threshold', `${Number.isFinite(temperatureThreshold) ? temperatureThreshold.toFixed(1) : '22.0'} °C`);
+  setText('temperature-threshold', Number.isFinite(temperatureThreshold) ? `${temperatureThreshold.toFixed(1)} °C` : '--');
   setText('gas-health', gasHealthy ? 'OK' : 'SENSOR ERROR');
+  setText('touch-reading', latest.touch_pressed == null ? 'No device report' : (latest.touch_pressed ? 'PRESSED' : 'Released'));
   setText('door-health', doorVerified ? (doorOpen ? 'OPEN' : 'CLOSED') : 'SENSOR UNVERIFIED');
   setText('alarm-state', latest.alarm_active ? 'ACTIVE' : (!temperatureHealthy ? 'UNKNOWN (sensor error)' : 'CLEAR'));
   setText('mute-state', latest.alarm_muted ? `MUTED · ${Number(latest.mute_remaining_s || 0)}s remaining` : 'NOT MUTED');
@@ -164,6 +214,12 @@ const renderOverview = (payload) => {
   setText('red-led-state', latest.red_led_on == null ? 'No device report' : (latest.red_led_on ? 'ON' : 'OFF'));
   setText('green-led-state', latest.green_led_on == null ? 'No device report' : (latest.green_led_on ? 'ON' : 'OFF'));
   setText('buzzer-state', latest.buzzer_on == null ? 'No device report' : (latest.buzzer_on ? 'ON' : 'OFF'));
+  setText('pin-temperature', temperature == null ? 'Unavailable' : `${temperature.toFixed(1)} °C`);
+  setText('pin-gas', gas == null ? 'Unavailable' : `${gas.toFixed(0)} / 4095 ADC`);
+  setText('pin-door', doorVerified ? (doorOpen ? 'Open' : 'Closed') : 'Unverified');
+  setText('pin-touch', latest.touch_pressed == null ? 'No device report' : (latest.touch_pressed ? 'Pressed' : 'Released'));
+  setText('rfid-reader-state', latest.rfid_reader_ok == null ? 'No device report' : (latest.rfid_reader_ok ? 'Reader detected · ready for tag' : 'Reader not detected'));
+  setText('pin-outputs', `Fan ${latest.fan_on == null ? '—' : (latest.fan_on ? 'ON' : 'OFF')} · Buzzer ${latest.buzzer_on == null ? '—' : (latest.buzzer_on ? 'ON' : 'OFF')}`);
 
   const tempTrend = document.getElementById('temperature-trend');
   if (tempTrend) {
@@ -197,8 +253,9 @@ const renderOverview = (payload) => {
   const eventList = document.getElementById('event-list');
   if (eventList) {
     eventList.innerHTML = events.length ? events.slice(0, 4).map((event) => `
-      <li><span>${event.message || event.alert_type}</span><strong>${event.status || 'active'}</strong></li>
+      <li><span>${event.message || event.alert_type}</span><strong>${event.status || 'active'}</strong>${event.status === 'active' ? `<button class="secondary-button" type="button" data-ack-id="${event.id}">Ack + mute</button>` : ''}</li>
     `).join('') : '<li class="empty-state">No recent events</li>';
+    bindAckButtons(eventList);
   }
 
   const summary = document.getElementById('alert-summary');
@@ -355,20 +412,30 @@ const renderAlerts = (payload) => {
       <td>${item.message || item.alert_type}</td>
       <td>${item.status}</td>
       <td>${isoToLocal(item.last_triggered)}</td>
-      <td><button class="secondary-button" type="button" data-ack-id="${item.id}">${item.status === 'acknowledged' ? 'Acked' : 'Acknowledge'}</button></td>
+      <td>${item.status === 'active' ? `<button class="secondary-button" type="button" data-ack-id="${item.id}">Ack + mute</button>` : item.status}</td>
     </tr>
   `).join('');
 
-  tbody.querySelectorAll('[data-ack-id]').forEach((button) => {
+  bindAckButtons(tbody);
+};
+
+const bindAckButtons = (container) => {
+  container.querySelectorAll('[data-ack-id]').forEach((button) => {
     button.addEventListener('click', async () => {
       const alertId = Number(button.getAttribute('data-ack-id'));
-      await fetchJson(`/api/v1/alerts/${alertId}/ack`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acknowledged_by: 'dashboard' }),
-      });
-      notify(`Alert ${alertId} acknowledged.`);
-      await refreshDashboard();
+      button.disabled = true;
+      try {
+        await fetchJson(`/api/v1/alerts/${alertId}/ack`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ acknowledged_by: 'dashboard' }),
+        });
+        notify(`Alert ${alertId} acknowledged. Buzzer mute sent to device.`);
+        await loadDashboardData();
+      } catch (error) {
+        button.disabled = false;
+        notify(`Could not acknowledge alert: ${error.message}`);
+      }
     });
   });
 };
@@ -419,13 +486,15 @@ const loadDashboardData = async () => {
   const pageId = page?.dataset?.page || 'overview';
   try {
     updateConnectionState('live');
-    const latest = await fetchJson('/api/v1/readings/latest');
-    const range = await fetchJson(`/api/v1/readings?from=${new Date(Date.now() - 3600000).toISOString()}&bucket=15m`);
-    const alerts = await fetchJson('/api/v1/alerts');
-    const settings = await fetchJson('/api/v1/settings/thresholds');
-    const device = await fetchJson('/api/v1/device/status');
-    const rfidScans = await fetchJson('/api/v1/rfid/scans?limit=8');
-    const rfidItems = pageId === 'overview' ? await fetchJson('/api/v1/rfid/items') : { data: [] };
+    const [latest, range, alerts, settings, device, rfidScans, rfidItems] = await Promise.all([
+      fetchJson('/api/v1/readings/latest'),
+      fetchJson(`/api/v1/readings?from=${new Date(Date.now() - 3600000).toISOString()}&bucket=15m`),
+      fetchJson('/api/v1/alerts'),
+      fetchJson('/api/v1/settings/thresholds'),
+      fetchJson('/api/v1/device/status'),
+      fetchJson('/api/v1/rfid/scans?limit=8'),
+      pageId === 'overview' ? fetchJson('/api/v1/rfid/items') : Promise.resolve({ data: [] }),
+    ]);
 
     state.settings = settings.data || {};
     const payload = { latest, range, alerts, settings, device, rfidScans, rfidItems };
@@ -441,6 +510,20 @@ const loadDashboardData = async () => {
     state.retryDelay = Math.min(state.retryDelay * 2, 30000);
     updateConnectionState('offline');
     notify(`Refresh failed: ${error.message}`);
+  }
+};
+
+const loadLiveData = async () => {
+  try {
+    const responses = await Promise.all([
+      fetchJson('/api/v1/readings/latest'),
+      ...(page?.dataset?.page === 'overview' ? [fetchJson('/api/v1/rfid/scans?limit=8')] : []),
+    ]);
+    renderLiveReading(responses[0].data);
+    if (responses[1]) renderRFIDScans(responses[1].data || []);
+    updateLastUpdated();
+  } catch (_) {
+    // The full refresh reports connection errors and retries.
   }
 };
 
@@ -537,6 +620,7 @@ const run = () => {
   }
 
   loadDashboardData();
+  state.liveIntervalId = setInterval(loadLiveData, 500);
   state.intervalId = setInterval(() => { loadDashboardData(); }, state.pollMs);
 };
 

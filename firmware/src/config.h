@@ -21,4 +21,4 @@ static constexpr bool ENABLE_DOOR_ALARM = false;
 static constexpr size_t MAX_OFFLINE_RING_BUFFER = 32;
 static constexpr uint32_t WIFI_RETRY_INITIAL_MS = 2000UL;
 static constexpr uint32_t WIFI_RETRY_MAX_MS = 60000UL;
-static constexpr uint32_t READ_INTERVAL_MS = 2000UL;
+static constexpr uint32_t READ_INTERVAL_MS = 1000UL;

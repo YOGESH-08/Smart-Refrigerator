@@ -13,6 +13,7 @@ Use the ESP32 DevKit V1 (30-pin) pin assignments below. Disconnect USB power whi
 | RC522 MOSI | GPIO23 | SPI MOSI |
 | RC522 MISO | GPIO19 | SPI MISO |
 | RC522 RST | GPIO22 | Reset |
+| RC522 supply | 3.3 V | Do not power the RC522 from 5 V; connect GND to ESP32 GND |
 | Fan control | GPIO26 | BC547 base through 1 kΩ; fan switched on 5 V supply, not from ESP32 GPIO |
 | Active buzzer | GPIO13 | Use a transistor driver if the buzzer current exceeds GPIO capability |
 | Red LED | GPIO15 | 220 Ω series resistor; GPIO15 is a boot-strapping pin, move it if boot issues occur |
@@ -27,3 +28,5 @@ Use the ESP32 DevKit V1 (30-pin) pin assignments below. Disconnect USB power whi
 - A TTP223 touch edge mutes the buzzer for 30 seconds; the red LED and fan remain commanded on while the temperature alarm persists.
 - The dashboard reports firmware-commanded outputs. The current hardware has no actuator feedback sensors, so it cannot verify that a fan, LED, or buzzer physically operated.
 - Load cell/HX711 and humidity are excluded from this firmware.
+
+At boot, the serial monitor prints the pin map and RC522 version register. A value of `0x00` or `0xFF` usually means the reader is not responding; check 3.3 V, common ground, and the five SPI/control connections above. Each two-second sensor log includes temperature, raw gas ADC, reed switch level, touch state, buzzer, fan, and LED commands.

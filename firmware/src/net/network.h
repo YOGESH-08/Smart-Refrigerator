@@ -20,6 +20,44 @@ class NetworkClient {
 
   int8_t rssi() const { return WiFi.RSSI(); }
 
+  bool acknowledgeCurrentAlert() {
+    if (!isConnected()) return false;
+    String endpoint = API_ENDPOINT;
+    const int suffix = endpoint.lastIndexOf("/readings");
+    if (suffix < 0) return false;
+    endpoint.remove(suffix);
+    endpoint += "/alerts/ack-current";
+    StaticJsonDocument<128> payload;
+    payload["device_id"] = DEVICE_ID;
+    return postJson(endpoint, payload, "Touch alert acknowledgement");
+  }
+
+  bool pollMuteCommand() {
+    if (!isConnected()) return false;
+    String endpoint = API_ENDPOINT;
+    const int suffix = endpoint.lastIndexOf("/readings");
+    if (suffix < 0) return false;
+    endpoint.remove(suffix);
+    endpoint += "/device/commands?device_id=";
+    endpoint += DEVICE_ID;
+    HTTPClient client;
+    client.setTimeout(1000);
+    if (!client.begin(endpoint)) return false;
+    client.addHeader("X-API-Key", API_KEY);
+    const int status = client.GET();
+    bool mute = false;
+    if (status == 200) {
+      StaticJsonDocument<256> response;
+      if (deserializeJson(response, client.getString()) == DeserializationError::Ok) {
+        for (JsonVariant command : response["data"].as<JsonArray>()) {
+          if (command == "mute_buzzer") mute = true;
+        }
+      }
+    }
+    client.end();
+    return mute;
+  }
+
   bool sendReading(const SensorReadings& reading, uint32_t door_open_seconds, uint32_t uptime_s) {
     if (!isConnected()) {
       return false;
@@ -35,6 +73,8 @@ class NetworkClient {
     if (reading.gas_valid) payload["gas_adc_raw"] = reading.gas_adc_raw;
     else payload["gas_adc_raw"] = nullptr;
     payload["door_open"] = reading.door_open;
+    payload["touch_pressed"] = reading.touch_pressed;
+    payload["rfid_reader_ok"] = reading.rfid_reader_ok;
     payload["door_open_seconds"] = door_open_seconds;
     payload["door_sensor_verified"] = reading.door_sensor_verified;
     payload["temperature_sensor_ok"] = reading.temperature_valid;
@@ -93,6 +133,20 @@ class NetworkClient {
     serializeJson(payload, body);
     const int status = client.POST(body);
     Serial.printf("RFID scan POST returned HTTP %d\n", status);
+    client.end();
+    return status >= 200 && status < 300;
+  }
+
+  bool postJson(const String& endpoint, JsonDocument& payload, const char* label) {
+    HTTPClient client;
+    client.setTimeout(1500);
+    if (!client.begin(endpoint)) return false;
+    client.addHeader("Content-Type", "application/json");
+    client.addHeader("X-API-Key", API_KEY);
+    String body;
+    serializeJson(payload, body);
+    const int status = client.POST(body);
+    Serial.printf("%s returned HTTP %d\n", label, status);
     client.end();
     return status >= 200 && status < 300;
   }

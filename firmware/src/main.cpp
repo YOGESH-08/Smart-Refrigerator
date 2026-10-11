@@ -29,6 +29,9 @@ namespace {
   uint32_t boot_ms = 0;
   uint32_t mute_until_ms = 0;
   bool touch_was_pressed = false;
+  uint32_t last_command_poll_ms = 0;
+  uint32_t last_rfid_wait_log_ms = 0;
+  bool rfid_reader_ok = false;
   SensorReadings current_sample{};
   FridgeState current_state = FridgeState::NORMAL;
   ActuatorStates current_actuators{};
@@ -75,6 +78,9 @@ namespace {
     const bool touch_pressed = sensors.touchPressed();
     if (touch_pressed && !touch_was_pressed && alert) {
       mute_until_ms = now_ms + ALARM_MUTE_MS;
+      const bool acknowledged = network.acknowledgeCurrentAlert();
+      Serial.printf("Touch alert: buzzer muted for 30s; current alert acknowledgement %s\n",
+                    acknowledged ? "sent" : "failed (device offline or request error)");
     }
     touch_was_pressed = touch_pressed;
     if (!alert || (mute_until_ms && static_cast<int32_t>(now_ms - mute_until_ms) >= 0)) {
@@ -102,7 +108,15 @@ namespace {
   }
 
   void scanRfidCard() {
-    if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) return;
+    if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
+      const uint32_t now = millis();
+      if (now - last_rfid_wait_log_ms >= 5000UL) {
+        last_rfid_wait_log_ms = now;
+        Serial.printf("RFID %s; waiting for card (RC522 pins SS=%u SCK=18 MOSI=23 MISO=19 RST=%u)\n",
+                      rfid_reader_ok ? "ready" : "NOT DETECTED", RFID_SS_PIN, RFID_RST_PIN);
+      }
+      return;
+    }
     String uid;
     for (byte index = 0; index < rfid.uid.size; ++index) {
       if (index) uid += ':';
@@ -162,9 +176,17 @@ void setup() {
   network.begin();
   SPI.begin(18, 19, 23, RFID_SS_PIN);
   rfid.PCD_Init();
+  delay(4);
+  const byte rfid_version = rfid.PCD_ReadRegister(MFRC522::VersionReg);
   last_wifi_attempt_ms = boot_ms;
   configureWatchdog();
   Serial.printf("Smart Refrigerator %s booted as %s\n", FIRMWARE_VERSION, DEVICE_ID);
+  Serial.printf("Pins: DS18B20=GPIO%u MQ135_AO=GPIO%u REED=GPIO%u TTP223=GPIO%u | RC522 SS/SDA=GPIO%u SCK=GPIO18 MOSI=GPIO23 MISO=GPIO19 RST=GPIO%u | FAN=GPIO%u BUZZER=GPIO%u RED_LED=GPIO%u GREEN_LED=GPIO%u\n",
+                DS18B20_PIN, MQ135_AOUT_PIN, REED_SWITCH_PIN, TTP223_PIN,
+                RFID_SS_PIN, RFID_RST_PIN, FAN_PIN, BUZZER_PIN, RED_LED_PIN, GREEN_LED_PIN);
+  Serial.printf("RC522 version register: 0x%02X%s\n", rfid_version,
+                (rfid_version == 0x00 || rfid_version == 0xFF) ? " (reader not detected: check 3.3V, GND, and SPI wiring)" : " (reader detected)");
+  rfid_reader_ok = rfid_version != 0x00 && rfid_version != 0xFF;
 }
 
 void loop() {
@@ -174,6 +196,7 @@ void loop() {
     last_read_ms = now_ms;
     current_sample = sensors.read();
     SensorReadings& sample = current_sample;
+    sample.rfid_reader_ok = rfid_reader_ok;
     if (sample.door_open && !door_open) {
       door_open_since_ms = now_ms;
     } else if (!sample.door_open) {
@@ -186,10 +209,15 @@ void loop() {
     applyLocalControl(now_ms);
     enqueueReading(sample, door_open_seconds);
 
-    Serial.printf("temp=%s gas=%s door=%s queue=%u\n",
+    Serial.printf("Sensors: temp=%s C [GPIO%u] | MQ135_AO=%u/4095 [GPIO%u] | reed=%s raw=%s [GPIO%u] | touch=%s raw=%s [GPIO%u] || Outputs: alarm=%s buzzer=%s [GPIO%u=%s] fan=%s [GPIO%u] LEDs=R:%s/G:%s || queue=%u\n",
                   sample.temperature_valid ? String(sample.temperature_c, 2).c_str() : "SENSOR_ERROR",
-                  sample.gas_valid ? String(sample.gas_adc_raw).c_str() : "SENSOR_ERROR",
-                  sample.door_open ? "open" : "closed",
+                  DS18B20_PIN, sample.gas_adc_raw, MQ135_AOUT_PIN,
+                  sample.door_open ? "open" : "closed", digitalRead(REED_SWITCH_PIN) == LOW ? "LOW" : "HIGH", REED_SWITCH_PIN,
+                  sample.silence_pressed ? "pressed" : "released", digitalRead(TTP223_PIN) == HIGH ? "HIGH" : "LOW", TTP223_PIN,
+                  sample.alarm_active ? "ACTIVE" : "CLEAR", sample.buzzer_on ? "ON" : "OFF", BUZZER_PIN,
+                  digitalRead(BUZZER_PIN) == HIGH ? "HIGH" : "LOW",
+                  sample.fan_on ? "ON" : "OFF", FAN_PIN,
+                  sample.red_led_on ? "ON" : "OFF", sample.green_led_on ? "ON" : "OFF",
                   static_cast<unsigned>(ring_count));
     if (network.isConnected()) {
       wifi_retry_ms = WIFI_RETRY_INITIAL_MS;
@@ -197,6 +225,14 @@ void loop() {
   }
 
   applyLocalControl(now_ms);
+  if (now_ms - last_command_poll_ms >= 1000UL) {
+    last_command_poll_ms = now_ms;
+    if (network.pollMuteCommand()) {
+      mute_until_ms = now_ms + ALARM_MUTE_MS;
+      Serial.println("Dashboard command: buzzer muted for 30s");
+      applyLocalControl(now_ms);
+    }
+  }
   scanRfidCard();
   flushOneRfidScan();
   reconnectWiFi(now_ms);
