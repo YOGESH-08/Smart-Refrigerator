@@ -1,23 +1,29 @@
 # Wiring and pin map
 
-The ESP32 DevKit V1 connects as follows:
+Use the ESP32 DevKit V1 (30-pin) pin assignments below. Disconnect USB power while changing wiring.
 
-| Function | ESP32 Pin | Notes |
+| Function | ESP32 pin | Connection / notes |
 | --- | --- | --- |
-| DS18B20 data | GPIO4 | 4.7k pull-up resistor required |
-| MQ-135 analog output | GPIO35 | Use a voltage divider if the board uses a 5V ADC range |
-| Reed switch | GPIO27 | Door state; active when magnet is far away |
-| HX711 DT | GPIO16 | Load-cell interface |
-| HX711 SCK | GPIO17 | Clock for load-cell amplifier |
-| TTP223 touch input | GPIO32 | Use to silence the buzzer |
-| Fan transistor | GPIO25 | NPN transistor driver |
-| Buzzer | GPIO26 | Active alarm output |
-| Red LED | GPIO18 | Warning/alert indicator |
-| Green LED | GPIO19 | Healthy state indicator |
+| DS18B20 DATA | GPIO4 | 4.7 kΩ pull-up from DATA to 3.3 V |
+| MQ-135 AO | GPIO34 | ADC1 input; reduce AO to 3.3 V or less with a suitable divider; readings are raw 0–4095 ADC counts |
+| Reed switch | GPIO27 | `INPUT_PULLUP`; firmware reports status as **SENSOR UNVERIFIED** until magnet and polarity are checked |
+| TTP223 OUT | GPIO14 | Assumed HIGH on touch; verify your module's output mode |
+| RC522 SDA/SS | GPIO5 | 3.3 V only |
+| RC522 SCK | GPIO18 | SPI clock |
+| RC522 MOSI | GPIO23 | SPI MOSI |
+| RC522 MISO | GPIO19 | SPI MISO |
+| RC522 RST | GPIO22 | Reset |
+| Fan control | GPIO26 | BC547 base through 1 kΩ; fan switched on 5 V supply, not from ESP32 GPIO |
+| Active buzzer | GPIO13 | Use a transistor driver if the buzzer current exceeds GPIO capability |
+| Red LED | GPIO15 | 220 Ω series resistor; GPIO15 is a boot-strapping pin, move it if boot issues occur |
+| Green LED | GPIO21 | 220 Ω series resistor |
 
-## Notes
+## Electrical and behavior notes
 
-- The DS18B20 requires a pull-up resistor between the data line and the 3.3V rail.
-- The MQ-135 is not a calibrated ppm sensor; it should be used as a relative trend indicator for gas rise.
-- The load-cell module must be tared before use to remove the empty shelf weight.
-- Keep the fan transistor circuit isolated from the ESP32 GPIO input with a base resistor.
+- Join ESP32 ground and external fan-supply ground. Add suitable transient protection for the fan, and verify the BC547 current rating against the fan's start-up current.
+- Do not connect 5 V directly to GPIO34. ESP32 inputs are not 5 V tolerant.
+- MQ-135 readings are for relative trend only; they are not calibrated ppm, food spoilage detection, or a safety assessment.
+- Door alarms remain disabled in firmware until the magnet is installed and GPIO27's open/closed polarity has been verified.
+- A TTP223 touch edge mutes the buzzer for 30 seconds; the red LED and fan remain commanded on while the temperature alarm persists.
+- The dashboard reports firmware-commanded outputs. The current hardware has no actuator feedback sensors, so it cannot verify that a fan, LED, or buzzer physically operated.
+- Load cell/HX711 and humidity are excluded from this firmware.

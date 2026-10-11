@@ -1,65 +1,73 @@
 #pragma once
 
 #include <Arduino.h>
-#include <OneWire.h>
 #include <DallasTemperature.h>
-#include <HX711.h>
+#include <OneWire.h>
 
 #include "../config.h"
 
-class SensorReadings {
- public:
-  float temperature_c = 0.0f;
-  float gas_voc = 0.0f;
-  float humidity_pct = 0.0f;
-  float weight_kg = 0.0f;
+struct SensorReadings {
+  float temperature_c = NAN;
+  uint16_t gas_adc_raw = 0;
+  bool temperature_valid = false;
+  bool gas_valid = false;
   bool door_open = false;
-  int wifi_rssi_dbm = -80;
-  bool has_error = false;
+  bool silence_pressed = false;
+  bool door_sensor_verified = false;
+  bool alarm_active = false;
+  bool alarm_muted = false;
+  bool fan_on = false;
+  bool red_led_on = false;
+  bool green_led_on = false;
+  bool buzzer_on = false;
+  uint16_t mute_remaining_s = 0;
 };
 
 class SensorSubsystem {
  public:
   void begin() {
-    one_wire_.begin(DS18B20_PIN);
-    sensors_.setOneWire(&one_wire_);
-    sensors_.begin();
-    scale_.begin(HX711_DT_PIN, HX711_SCK_PIN);
+    pinMode(MQ135_AOUT_PIN, INPUT);
     pinMode(REED_SWITCH_PIN, INPUT_PULLUP);
-    pinMode(TTP223_PIN, INPUT_PULLUP);
-    scale_.set_scale();
-    scale_.tare();
+    pinMode(TTP223_PIN, INPUT);
+    analogReadResolution(12);
+    sensors_.begin();
+    sensors_.setWaitForConversion(false);
+    sensors_.requestTemperatures();
+    conversion_started_ms_ = millis();
   }
 
   SensorReadings read() {
-    SensorReadings sample;
-    sample.temperature_c = readTemperatureC();
-    sample.gas_voc = analogRead(MQ135_AOUT_PIN) * 0.12f;
-    sample.humidity_pct = 50.0f;
-    sample.door_open = digitalRead(REED_SWITCH_PIN) == LOW;
-    sample.weight_kg = readWeightKg();
-    sample.wifi_rssi_dbm = WiFi.RSSI();
-    sample.has_error = isnan(sample.temperature_c) || sample.temperature_c == 0.0f;
-    return sample;
-  }
-
-  float readTemperatureC() {
-    sensors_.requestTemperatures();
-    const float reading = sensors_.getTempCByIndex(0);
-    if (isnan(reading)) {
-      return 5.0f;
+    const uint32_t now = millis();
+    if (now - conversion_started_ms_ >= conversion_time_ms_) {
+      const float reading = sensors_.getTempCByIndex(0);
+      if (reading != DEVICE_DISCONNECTED_C && !isnan(reading) && reading >= -50.0f && reading <= 100.0f) {
+        temperature_c_ = reading;
+        temperature_valid_ = true;
+      } else {
+        temperature_valid_ = false;
+      }
+      sensors_.requestTemperatures();
+      conversion_started_ms_ = now;
     }
-    return reading;
+
+    const uint16_t gas = static_cast<uint16_t>(analogRead(MQ135_AOUT_PIN));
+    SensorReadings result;
+    result.temperature_c = temperature_c_;
+    result.temperature_valid = temperature_valid_;
+    result.gas_adc_raw = gas;
+    result.gas_valid = gas > 1 && gas < 4094;
+    result.door_open = digitalRead(REED_SWITCH_PIN) == LOW;
+    result.silence_pressed = touchPressed();
+    return result;
   }
 
-  float readWeightKg() {
-    const int32_t raw = scale_.get_units(5);
-    const float kilograms = raw / 1000.0f;
-    return max(0.0f, kilograms);
-  }
+  bool touchPressed() const { return digitalRead(TTP223_PIN) == HIGH; }
 
  private:
-  OneWire one_wire_;
+  OneWire one_wire_{DS18B20_PIN};
   DallasTemperature sensors_{&one_wire_};
-  HX711 scale_;
+  uint32_t conversion_started_ms_ = 0;
+  static constexpr uint32_t conversion_time_ms_ = 750UL;
+  float temperature_c_ = NAN;
+  bool temperature_valid_ = false;
 };

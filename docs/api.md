@@ -2,7 +2,7 @@
 
 ## Authentication
 
-The device and simulator must send the `X-API-Key` header. The default value is `smart-fridge-demo-key`.
+The device and simulator must send the `X-API-Key` header. Set `SMART_FRIDGE_API_KEY` in `server/.env` and use the same key in the local firmware `device_config.h`.
 
 ## Reading payload example
 
@@ -14,18 +14,27 @@ Content-Type: application/json
 
 ```json
 {
-  "device_id": "device-01",
-  "temperature_c": 6.5,
-  "humidity_pct": 47.1,
-  "gas_voc": 128.0,
-  "weight_kg": 4.2,
+  "device_id": "refrigerator-01",
+  "temperature_c": 23.4,
+  "gas_adc_raw": 2048,
+  "temperature_sensor_ok": true,
+  "gas_sensor_ok": true,
   "door_open": false,
-  "battery_mv": 3890,
+  "door_sensor_verified": false,
+  "alarm_active": true,
+  "alarm_muted": false,
+  "mute_remaining_s": 0,
+  "fan_on": true,
+  "red_led_on": true,
+  "green_led_on": false,
+  "buzzer_on": true,
   "wifi_rssi_dbm": -60,
-  "firmware_version": "1.1.0",
+  "firmware_version": "1.2.0",
   "uptime_s": 2780
 }
 ```
+
+`gas_adc_raw` is the MQ-135 ADC count from 0–4095. It is a relative reading, not ppm or a food-safety result. Temperature sensor failures are represented by `temperature_c: null` and `temperature_sensor_ok: false`. The unverified reed state remains raw until the magnet is installed. `door_open_seconds` is accepted but door alarms remain disabled until verification. No humidity or load-cell data is sent. Actuator fields report commanded output states, not physical feedback.
 
 ### Response
 
@@ -33,13 +42,16 @@ Content-Type: application/json
 {
   "data": {
     "id": 1,
-    "device_id": "device-01",
+    "device_id": "refrigerator-01",
     "timestamp": "2026-10-10T06:00:00+00:00",
-    "temperature_c": 6.5,
-    "humidity_pct": 47.1,
-    "gas_voc": 128.0,
-    "weight_kg": 4.2,
-    "door_open": false
+    "temperature_c": 23.4,
+    "gas_adc_raw": 2048,
+    "temperature_sensor_ok": 1,
+    "door_sensor_verified": 0,
+    "alarm_active": 1,
+    "fan_on": 1,
+    "red_led_on": 1,
+    "buzzer_on": 1
   },
   "meta": {
     "status": "stored",
@@ -52,6 +64,28 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/readings/latest
+```
+
+## RFID scan events
+
+```http
+POST /api/v1/rfid/scans
+X-API-Key: <same-device-key>
+Content-Type: application/json
+```
+
+```json
+{
+  "device_id": "refrigerator-01",
+  "uid": "AB:12:CD:34",
+  "firmware_version": "1.2.0"
+}
+```
+
+The server timestamps and stores the scan. A UID is only an identifier; the dashboard labels it as unmapped unless an explicit product mapping is added.
+
+```http
+GET /api/v1/rfid/scans?limit=20
 ```
 
 ## GET readings with time filtering
@@ -86,13 +120,15 @@ Content-Type: application/json
 
 ```json
 {
-  "temperature_high_c": 7.5,
+  "temperature_high_c": 22.0,
   "gas_rise_delta": 12.0,
   "door_open_seconds": 200,
   "low_inventory_kg": 3.0,
   "offline_seconds": 120
 }
 ```
+
+The ESP32's temperature limit is fixed at 22°C in firmware. Keep this server threshold at 22°C so dashboard alerting agrees with the controller.
 
 ## CSV export
 

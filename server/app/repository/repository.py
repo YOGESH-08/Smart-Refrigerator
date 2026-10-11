@@ -28,19 +28,32 @@ class Repository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     device_id TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
-                    temperature_c REAL NOT NULL,
-                    humidity_pct REAL NOT NULL,
-                    gas_voc REAL NOT NULL,
-                    weight_kg REAL NOT NULL,
+                    temperature_c REAL,
+                    humidity_pct REAL,
+                    gas_voc REAL,
+                    gas_adc_raw INTEGER,
+                    weight_kg REAL,
                     door_open INTEGER NOT NULL,
+                    door_open_seconds REAL,
                     battery_mv REAL,
                     wifi_rssi_dbm INTEGER,
                     firmware_version TEXT,
                     uptime_s INTEGER,
+                    temperature_sensor_ok INTEGER,
+                    gas_sensor_ok INTEGER,
+                    door_sensor_verified INTEGER NOT NULL DEFAULT 0,
+                    alarm_active INTEGER NOT NULL DEFAULT 0,
+                    alarm_muted INTEGER NOT NULL DEFAULT 0,
+                    mute_remaining_s INTEGER,
+                    fan_on INTEGER NOT NULL DEFAULT 0,
+                    red_led_on INTEGER NOT NULL DEFAULT 0,
+                    green_led_on INTEGER NOT NULL DEFAULT 0,
+                    buzzer_on INTEGER NOT NULL DEFAULT 0,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """
             )
+            self._migrate_readings_table(conn)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_readings_device_timestamp ON readings(device_id, timestamp)"
             )
@@ -67,6 +80,10 @@ class Repository:
                 "CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status, device_id, last_triggered)"
             )
             conn.execute(
+                "CREATE TABLE IF NOT EXISTS rfid_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, device_id TEXT NOT NULL, uid TEXT NOT NULL, item_name TEXT, firmware_version TEXT, timestamp TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rfid_scans_timestamp ON rfid_scans(timestamp DESC)")
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
@@ -90,9 +107,73 @@ class Repository:
             )
             self._ensure_defaults(conn)
 
+    def _migrate_readings_table(self, conn: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]: row
+            for row in conn.execute("PRAGMA table_info(readings)").fetchall()
+        }
+        optional_columns = ("temperature_c", "humidity_pct", "gas_voc", "weight_kg")
+        if any(columns[name]["notnull"] for name in optional_columns):
+            conn.execute(
+                """
+                CREATE TABLE readings_migrated (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    temperature_c REAL,
+                    humidity_pct REAL,
+                    gas_voc REAL,
+                    weight_kg REAL,
+                    door_open INTEGER NOT NULL,
+                    door_open_seconds REAL,
+                    battery_mv REAL,
+                    wifi_rssi_dbm INTEGER,
+                    firmware_version TEXT,
+                    uptime_s INTEGER,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            source_columns = (
+                "id, device_id, timestamp, temperature_c, humidity_pct, gas_voc, "
+                "weight_kg, door_open, battery_mv, wifi_rssi_dbm, firmware_version, "
+                "uptime_s, created_at"
+            )
+            conn.execute(
+                f"INSERT INTO readings_migrated ({source_columns}) "
+                f"SELECT {source_columns} FROM readings"
+            )
+            conn.execute("DROP TABLE readings")
+            conn.execute("ALTER TABLE readings_migrated RENAME TO readings")
+            columns = {
+                row["name"]: row
+                for row in conn.execute("PRAGMA table_info(readings)").fetchall()
+            }
+        if "door_open_seconds" not in columns:
+            conn.execute("ALTER TABLE readings ADD COLUMN door_open_seconds REAL")
+        additions = {
+            "gas_adc_raw": "INTEGER",
+            "temperature_sensor_ok": "INTEGER",
+            "gas_sensor_ok": "INTEGER",
+            "door_sensor_verified": "INTEGER NOT NULL DEFAULT 0",
+            "alarm_active": "INTEGER NOT NULL DEFAULT 0",
+            "alarm_muted": "INTEGER NOT NULL DEFAULT 0",
+            "mute_remaining_s": "INTEGER",
+            "fan_on": "INTEGER NOT NULL DEFAULT 0",
+            "red_led_on": "INTEGER NOT NULL DEFAULT 0",
+            "green_led_on": "INTEGER NOT NULL DEFAULT 0",
+            "buzzer_on": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE readings ADD COLUMN {name} {declaration}")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_readings_device_timestamp ON readings(device_id, timestamp)"
+        )
+
     def _ensure_defaults(self, conn: sqlite3.Connection) -> None:
         defaults = {
-            "temperature_high_c": "7.0",
+            "temperature_high_c": "22.0",
             "gas_rise_delta": "10.0",
             "door_open_seconds": "180.0",
             "low_inventory_kg": "2.5",
@@ -104,6 +185,7 @@ class Repository:
                 "INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES (?, ?, ?)",
                 (key, value, _utc_now_iso()),
             )
+        conn.execute("UPDATE settings SET value = '22.0' WHERE key = 'temperature_high_c' AND value = '7.0'")
 
     def insert_reading(self, payload: dict[str, Any]) -> dict[str, Any]:
         current = _utc_now_iso()
@@ -111,22 +193,36 @@ class Repository:
             cursor = conn.execute(
                 """
                 INSERT INTO readings (
-                    device_id, timestamp, temperature_c, humidity_pct, gas_voc, weight_kg,
-                    door_open, battery_mv, wifi_rssi_dbm, firmware_version, uptime_s, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        device_id, timestamp, temperature_c, humidity_pct, gas_voc, gas_adc_raw, weight_kg,
+                        door_open, door_open_seconds, battery_mv, wifi_rssi_dbm, firmware_version, uptime_s,
+                        temperature_sensor_ok, gas_sensor_ok, door_sensor_verified, alarm_active, alarm_muted,
+                        mute_remaining_s, fan_on, red_led_on, green_led_on, buzzer_on, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["device_id"],
                     current,
-                    float(payload["temperature_c"]),
-                    float(payload["humidity_pct"]),
-                    float(payload["gas_voc"]),
-                    float(payload["weight_kg"]),
+                    payload.get("temperature_c"),
+                    payload.get("humidity_pct"),
+                    payload.get("gas_voc"),
+                    payload.get("gas_adc_raw"),
+                    payload.get("weight_kg"),
                     int(bool(payload.get("door_open", False))),
+                    payload.get("door_open_seconds"),
                     payload.get("battery_mv"),
                     payload.get("wifi_rssi_dbm"),
                     payload.get("firmware_version", "1.0.0"),
                     payload.get("uptime_s"),
+                    _optional_bool(payload.get("temperature_sensor_ok")),
+                    _optional_bool(payload.get("gas_sensor_ok")),
+                    int(bool(payload.get("door_sensor_verified", False))),
+                    int(bool(payload.get("alarm_active", False))),
+                    int(bool(payload.get("alarm_muted", False))),
+                    payload.get("mute_remaining_s"),
+                    int(bool(payload.get("fan_on", False))),
+                    int(bool(payload.get("red_led_on", False))),
+                    int(bool(payload.get("green_led_on", False))),
+                    int(bool(payload.get("buzzer_on", False))),
                     current,
                 ),
             )
@@ -148,6 +244,21 @@ class Repository:
         with self.get_connection() as conn:
             row = conn.execute("SELECT * FROM readings WHERE id = ?", (reading_id,)).fetchone()
             return dict(row) if row else None
+
+    def insert_rfid_scan(self, payload: dict[str, Any]) -> dict[str, Any]:
+        current = _utc_now_iso()
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO rfid_scans(device_id, uid, item_name, firmware_version, timestamp, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (payload["device_id"], payload["uid"], payload.get("item_name"), payload.get("firmware_version"), current, current),
+            )
+            row = conn.execute("SELECT * FROM rfid_scans WHERE id = ?", (cursor.lastrowid,)).fetchone()
+            return dict(row)
+
+    def get_rfid_scans(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self.get_connection() as conn:
+            rows = conn.execute("SELECT * FROM rfid_scans ORDER BY timestamp DESC LIMIT ?", (limit,)).fetchall()
+            return [dict(row) for row in rows]
 
     def get_latest_reading(self, device_id: str | None = None) -> dict[str, Any] | None:
         with self.get_connection() as conn:
@@ -290,13 +401,13 @@ class Repository:
             output = StringIO()
             writer = csv.writer(output)
             writer.writerow([
-                "id", "device_id", "timestamp", "temperature_c", "humidity_pct", "gas_voc",
-                "weight_kg", "door_open", "battery_mv", "wifi_rssi_dbm", "firmware_version", "uptime_s"
+                "id", "device_id", "timestamp", "temperature_c", "humidity_pct", "gas_voc", "gas_adc_raw",
+                "weight_kg", "door_open", "door_open_seconds", "battery_mv", "wifi_rssi_dbm", "firmware_version", "uptime_s"
             ])
             for row in rows:
                 writer.writerow([row[col] for col in [
-                    "id", "device_id", "timestamp", "temperature_c", "humidity_pct", "gas_voc",
-                    "weight_kg", "door_open", "battery_mv", "wifi_rssi_dbm", "firmware_version", "uptime_s"
+                    "id", "device_id", "timestamp", "temperature_c", "humidity_pct", "gas_voc", "gas_adc_raw",
+                    "weight_kg", "door_open", "door_open_seconds", "battery_mv", "wifi_rssi_dbm", "firmware_version", "uptime_s"
                 ]])
             return output.getvalue()
 
@@ -314,3 +425,7 @@ def _utc_now_iso(delta: timedelta | None = None) -> str:
     else:
         now = datetime.now(timezone.utc)
     return now.isoformat(timespec="seconds")
+
+
+def _optional_bool(value: Any) -> int | None:
+    return None if value is None else int(bool(value))

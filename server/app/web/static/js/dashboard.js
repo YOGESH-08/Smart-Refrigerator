@@ -10,6 +10,7 @@ const state = {
   retryDelay: 2000,
   pollMs: 2000,
   charts: {},
+  settings: {},
 };
 
 const notify = (message) => {
@@ -75,38 +76,76 @@ const renderOverview = (payload) => {
   if (!latest) {
     return;
   }
-  const temperature = Number(latest.temperature_c ?? 0);
-  const gas = Number(latest.gas_voc ?? 0);
-  const weight = Number(latest.weight_kg ?? 0);
+  const temperature = latest.temperature_c == null ? null : Number(latest.temperature_c);
+  const gasReading = latest.gas_adc_raw;
+  const gas = gasReading == null ? null : Number(gasReading);
+  const weight = latest.weight_kg == null ? null : Number(latest.weight_kg);
+  const thresholds = payload.settings?.data || {};
+  const temperatureThreshold = Number(thresholds.temperature_high_c);
+  const gasBaseline = Number(thresholds.baseline_gas);
+  const gasRiseThreshold = Number(thresholds.gas_rise_delta);
+  const lowInventoryThreshold = Number(thresholds.low_inventory_kg);
   const doorOpen = Boolean(latest.door_open);
+  const doorVerified = Boolean(latest.door_sensor_verified);
+  const temperatureHealthy = latest.temperature_sensor_ok !== false && latest.temperature_sensor_ok !== 0 && temperature != null;
+  const gasHealthy = latest.gas_sensor_ok !== false && latest.gas_sensor_ok !== 0 && gas != null;
   const tempEl = document.getElementById('temperature-value');
   const gasEl = document.getElementById('gas-value');
   const weightEl = document.getElementById('weight-value');
   const doorEl = document.getElementById('door-value');
 
-  if (tempEl) tempEl.textContent = temperature.toFixed(1);
-  if (gasEl) gasEl.textContent = gas.toFixed(0);
-  if (weightEl) weightEl.textContent = weight.toFixed(1);
-  if (doorEl) doorEl.textContent = doorOpen ? 'Open' : 'Closed';
+  if (tempEl) tempEl.textContent = temperature == null ? '--' : temperature.toFixed(1);
+  if (gasEl) gasEl.textContent = gas == null ? '--' : gas.toFixed(1);
+  if (weightEl) weightEl.textContent = weight == null ? '--' : weight.toFixed(1);
+  if (doorEl) doorEl.textContent = doorVerified ? (doorOpen ? 'Open' : 'Closed') : 'Unverified';
 
   document.getElementById('last-seen').textContent = isoToLocal(latest.timestamp);
-  document.getElementById('system-state').textContent = doorOpen ? 'Door alert' : (temperature > 7 ? 'Warning' : 'Normal');
-  document.getElementById('device-status-pill').textContent = doorOpen ? 'Door open' : 'Online';
-  document.getElementById('device-status-pill').className = `pill ${doorOpen ? 'amber' : 'green'}`;
+  const doorAlert = doorVerified && doorOpen && Number(latest.door_open_seconds || 0) >= Number(thresholds.door_open_seconds || 180);
+  const legacyGasValue = latest.gas_voc == null ? null : Number(latest.gas_voc);
+  const gasAlert = legacyGasValue != null && Number.isFinite(gasBaseline) &&
+    Number.isFinite(gasRiseThreshold) && legacyGasValue >= gasBaseline + gasRiseThreshold;
+  const temperatureAlert = temperature != null && Number.isFinite(temperatureThreshold) &&
+    temperature > temperatureThreshold;
+  const hasWarning = temperatureAlert || gasAlert;
+  document.getElementById('system-state').textContent = !temperatureHealthy ? 'Temperature sensor error' : (doorAlert ? 'Door alert' : (hasWarning ? 'Warning' : 'Normal'));
+  document.getElementById('device-status-pill').textContent = !temperatureHealthy ? 'Sensor error' : (doorVerified ? (doorOpen ? 'Door open' : 'Door closed') : 'Door unverified');
+  document.getElementById('device-status-pill').className = `pill ${!temperatureHealthy ? 'red' : (doorOpen && doorVerified ? 'amber' : 'green')}`;
+  const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
+  setText('temperature-health', temperatureHealthy ? 'OK' : 'SENSOR ERROR');
+  setText('temperature-threshold', `${Number.isFinite(temperatureThreshold) ? temperatureThreshold.toFixed(1) : '22.0'} °C`);
+  setText('gas-health', gasHealthy ? 'OK' : 'SENSOR ERROR');
+  setText('door-health', doorVerified ? (doorOpen ? 'OPEN' : 'CLOSED') : 'SENSOR UNVERIFIED');
+  setText('alarm-state', latest.alarm_active ? 'ACTIVE' : (!temperatureHealthy ? 'UNKNOWN (sensor error)' : 'CLEAR'));
+  setText('mute-state', latest.alarm_muted ? `MUTED · ${Number(latest.mute_remaining_s || 0)}s remaining` : 'NOT MUTED');
+  setText('fan-state', latest.fan_on == null ? 'No device report' : (latest.fan_on ? 'ON' : 'OFF'));
+  setText('red-led-state', latest.red_led_on == null ? 'No device report' : (latest.red_led_on ? 'ON' : 'OFF'));
+  setText('green-led-state', latest.green_led_on == null ? 'No device report' : (latest.green_led_on ? 'ON' : 'OFF'));
+  setText('buzzer-state', latest.buzzer_on == null ? 'No device report' : (latest.buzzer_on ? 'ON' : 'OFF'));
 
-  const trendColors = ['up', 'neutral', 'down'];
   const tempTrend = document.getElementById('temperature-trend');
-  if (tempTrend) tempTrend.textContent = `${temperature > 5 ? '+' : ''}${(temperature * 0.4).toFixed(1)}°`; tempTrend.className = `trend ${temperature > 5 ? 'up' : 'neutral'}`;
+  if (tempTrend) {
+    tempTrend.textContent = temperature == null ? '--' : 'Live reading';
+    tempTrend.className = `trend ${temperatureAlert ? 'up' : 'neutral'}`;
+  }
   const gasTrend = document.getElementById('gas-trend');
-  if (gasTrend) gasTrend.textContent = `${gas > 120 ? '+' : ''}${(gas * 0.05).toFixed(0)} VOC`; gasTrend.className = `trend ${gas > 120 ? 'up' : 'neutral'}`;
+  if (gasTrend) {
+    gasTrend.textContent = gas == null ? '--' : 'Live reading';
+    gasTrend.className = `trend ${gasAlert ? 'up' : 'neutral'}`;
+  }
   const weightTrend = document.getElementById('weight-trend');
-  if (weightTrend) weightTrend.textContent = `${weight < 3 ? 'Low' : 'Stable'}`; weightTrend.className = `trend ${weight < 3 ? 'down' : 'neutral'}`;
+  if (weightTrend) {
+    weightTrend.textContent = weight == null ? 'Sensor not connected' : 'Live reading';
+    weightTrend.className = `trend ${weight != null && Number.isFinite(lowInventoryThreshold) && weight < lowInventoryThreshold ? 'down' : 'neutral'}`;
+  }
   const doorTrend = document.getElementById('door-trend');
-  if (doorTrend) doorTrend.textContent = doorOpen ? 'Open' : 'Closed'; doorTrend.className = `trend ${doorOpen ? 'amber' : 'neutral'}`;
+  if (doorTrend) {
+    doorTrend.textContent = doorVerified ? (doorOpen ? 'Open' : 'Closed') : 'Sensor unverified';
+    doorTrend.className = `trend ${doorVerified && doorOpen ? 'amber' : 'neutral'}`;
+  }
 
-  const tempPoints = payload.range?.data?.map((row) => Number(row.temperature_c ?? 0)) || [temperature];
-  const gasPoints = payload.range?.data?.map((row) => Number(row.gas_voc ?? 0)) || [gas];
-  const weightPoints = payload.range?.data?.map((row) => Number(row.weight_kg ?? 0)) || [weight];
+  const tempPoints = (payload.range?.data || []).map((row) => row.temperature_c).filter(Number.isFinite);
+  const gasPoints = (payload.range?.data || []).map((row) => row.gas_voc).filter(Number.isFinite);
+  const weightPoints = (payload.range?.data || []).map((row) => row.weight_kg).filter(Number.isFinite);
   renderSparkline('#temp-spark', tempPoints);
   renderSparkline('#gas-spark', gasPoints);
   renderSparkline('#weight-spark', weightPoints);
@@ -124,16 +163,27 @@ const renderOverview = (payload) => {
     const activeCount = (payload.alerts?.data || []).filter((item) => item.status === 'active').length;
     summary.innerHTML = `
       <div class="summary-item"><strong>${activeCount}</strong> active alerts</div>
-      <div class="summary-item"><strong>${doorOpen ? '1' : '0'}</strong> door warnings</div>
-      <div class="summary-item"><strong>${temperature > 7 ? '1' : '0'}</strong> temp violations</div>
+      <div class="summary-item"><strong>${doorAlert ? '1' : '0'}</strong> door warnings</div>
+      <div class="summary-item"><strong>${temperatureAlert ? '1' : '0'}</strong> temp violations</div>
     `;
+  }
+
+  const scans = payload.rfidScans?.data || [];
+  const scanList = document.getElementById('rfid-scan-list');
+  if (scanList) {
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    scanList.innerHTML = scans.length ? scans.slice(0, 8).map((scan) =>
+      `<li><span>${escapeHtml(scan.item_name || 'Unmapped tag')} · ${isoToLocal(scan.timestamp)}</span><strong>${escapeHtml(scan.uid)}</strong></li>`
+    ).join('') : '<li class="empty-state">No RFID scans recorded</li>';
   }
 
   const timeline = document.getElementById('door-timeline');
   if (timeline) {
     const samples = payload.range?.data || [];
     const eventsList = samples.filter((row) => row.door_open).slice(0, 4);
-    if (!eventsList.length) {
+    if (!doorVerified) {
+      timeline.innerHTML = '<div class="empty-state">Door sensor unverified until magnet and switch polarity are checked.</div>';
+    } else if (!eventsList.length) {
       timeline.innerHTML = '<div class="empty-state">No door events in selected range</div>';
     } else {
       timeline.innerHTML = eventsList.map((row) => `
@@ -144,13 +194,52 @@ const renderOverview = (payload) => {
       `).join('');
     }
   }
+
+  const chartRows = payload.range?.data || [];
+  const overviewChart = document.getElementById('overview-chart');
+  if (overviewChart) {
+    drawChart('overview-chart', {
+      labels: chartRows.map((row) => new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
+      datasets: [
+        {
+          label: 'Temperature (Ã‚Â°C)',
+          data: chartRows.map((row) => row.temperature_c),
+          borderColor: '#a0662a',
+          backgroundColor: 'rgba(160, 102, 42, 0.12)',
+          yAxisID: 'temperature',
+          spanGaps: false,
+        },
+        {
+          label: 'Temperature limit',
+          data: chartRows.map(() => Number.isFinite(temperatureThreshold) ? temperatureThreshold : null),
+          borderColor: '#b84a4a',
+          borderDash: [5, 5],
+          pointRadius: 0,
+          yAxisID: 'temperature',
+        },
+        {
+          label: 'MQ-135 raw ADC (not ppm)',
+          data: chartRows.map((row) => row.gas_adc_raw),
+          borderColor: '#2d7a5d',
+          backgroundColor: 'rgba(45, 122, 93, 0.10)',
+          yAxisID: 'gas',
+          spanGaps: false,
+        },
+      ],
+      options: {
+        scales: {
+          temperature: { type: 'linear', position: 'left', title: { display: true, text: 'Ã‚Â°C' } },
+          gas: { type: 'linear', position: 'right', title: { display: true, text: 'Raw ADC (0–4095)' }, grid: { drawOnChartArea: false } },
+        },
+      },
+      type: 'line',
+    });
+  }
 };
 
 const renderAnalytics = (payload) => {
   const rows = payload.range?.data || [];
-  const temps = rows.map((row) => Number(row.temperature_c || 0));
-  const values = rows.map((row) => Number(row.weight_kg || 0));
-  const gasValues = rows.map((row) => Number(row.gas_voc || 0));
+  const temps = rows.map((row) => row.temperature_c).filter(Number.isFinite);
 
   const tempMin = document.getElementById('temp-min');
   const tempAvg = document.getElementById('temp-avg');
@@ -160,7 +249,12 @@ const renderAnalytics = (payload) => {
   if (tempMin) tempMin.textContent = temps.length ? Math.min(...temps).toFixed(1) : '--';
   if (tempAvg) tempAvg.textContent = temps.length ? (temps.reduce((sum, value) => sum + value, 0) / temps.length).toFixed(1) : '--';
   if (tempMax) tempMax.textContent = temps.length ? Math.max(...temps).toFixed(1) : '--';
-  if (doorDuration) doorDuration.textContent = `${rows.filter((row) => row.door_open).length * 5 || 0}`;
+  if (doorDuration) {
+    const latest = rows[rows.length - 1];
+    doorDuration.textContent = latest?.door_open_seconds == null
+      ? '--'
+      : (Number(latest.door_open_seconds) / 60).toFixed(1);
+  }
 
   const doorChartCtx = document.getElementById('door-chart');
   if (doorChartCtx) {
@@ -182,8 +276,7 @@ const renderAnalytics = (payload) => {
     drawChart('gas-chart', {
       labels: rows.map((row) => new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
       datasets: [
-        { label: 'Current gas', data: gasValues, borderColor: '#a0662a', backgroundColor: 'rgba(160, 102, 42, 0.15)', fill: true },
-        { label: 'Baseline', data: gasValues.map(() => 120), borderColor: '#6b7280', borderDash: [5, 5], fill: false },
+        { label: 'MQ-135 raw ADC (not ppm)', data: rows.map((row) => row.gas_adc_raw), borderColor: '#a0662a', backgroundColor: 'rgba(160, 102, 42, 0.15)', fill: true },
       ],
       type: 'line',
     });
@@ -195,7 +288,7 @@ const renderAnalytics = (payload) => {
       labels: rows.map((row) => new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })),
       datasets: [{
         label: 'Weight (kg)',
-        data: values,
+        data: rows.map((row) => row.weight_kg),
         borderColor: '#2d7a5d',
         backgroundColor: 'rgba(45, 122, 93, 0.15)',
         fill: true,
@@ -240,14 +333,14 @@ const renderAlerts = (payload) => {
 
 const renderDevicePanel = (payload) => {
   const device = payload.device?.data || {};
-  document.getElementById('device-id').textContent = device.device_id || 'device-01';
+  document.getElementById('device-id').textContent = device.device_id || '--';
   document.getElementById('device-last-seen').textContent = isoToLocal(device.last_seen);
   document.getElementById('firmware-version').textContent = device.firmware_version || 'unknown';
   document.getElementById('wifi-rssi').textContent = device.wifi_rssi_dbm != null ? `${device.wifi_rssi_dbm} dBm` : 'n/a';
   document.getElementById('uptime').textContent = device.uptime_s != null ? `${Math.floor(device.uptime_s / 60)} min` : 'n/a';
   document.getElementById('device-connection').textContent = device.status || 'offline';
 
-  const thresholds = payload.thresholds?.data || {};
+  const thresholds = payload.settings?.data || {};
   const form = document.getElementById('threshold-form');
   if (form) {
     for (const [name, value] of Object.entries(thresholds)) {
@@ -258,22 +351,28 @@ const renderDevicePanel = (payload) => {
 };
 
 const drawChart = (elementId, config) => {
-  if (!elementId || !document.getElementById(elementId)) return;
+  const canvas = document.getElementById(elementId);
+  if (!canvas) return;
+  const chartData = { labels: config.labels, datasets: config.datasets };
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom' }, tooltip: { mode: 'index', intersect: false } },
+    ...(config.options || {}),
+  };
   const existing = state.charts[elementId];
-  if (existing) existing.destroy();
-  const chart = new Chart(document.getElementById(elementId), {
+  if (existing) {
+    existing.data = chartData;
+    existing.options = chartOptions;
+    existing.update('none');
+    return;
+  }
+  state.charts[elementId] = new Chart(canvas, {
     type: config.type || 'line',
-    data: config,
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: 'bottom' }, tooltip: { mode: 'index', intersect: false } },
-      scales: { y: { beginAtZero: false } },
-    },
+    data: chartData,
+    options: chartOptions,
   });
-  state.charts[elementId] = chart;
 };
-
 const loadDashboardData = async () => {
   const pageId = page?.dataset?.page || 'overview';
   try {
@@ -282,9 +381,11 @@ const loadDashboardData = async () => {
     const range = await fetchJson(`/api/v1/readings?from=${new Date(Date.now() - 3600000).toISOString()}&bucket=15m`);
     const alerts = await fetchJson('/api/v1/alerts');
     const settings = await fetchJson('/api/v1/settings/thresholds');
-    const device = await fetchJson('/api/v1/device/status?device_id=device-01');
+    const device = await fetchJson('/api/v1/device/status');
+    const rfidScans = await fetchJson('/api/v1/rfid/scans?limit=8');
 
-    const payload = { latest, range, alerts, settings, device };
+    state.settings = settings.data || {};
+    const payload = { latest, range, alerts, settings, device, rfidScans };
     if (pageId === 'overview') renderOverview(payload);
     if (pageId === 'analytics') renderAnalytics(payload);
     if (pageId === 'alerts') renderAlerts(payload);
@@ -310,7 +411,7 @@ const bindRangeSelector = () => {
       const from = new Date(Date.now() - fromMap[range]).toISOString();
       fetchJson(`/api/v1/readings?from=${from}&bucket=raw`).then((payload) => {
         const rangePayload = { data: payload.data || [] };
-        const fresh = { latest: { data: payload.data?.slice(-1)[0] || null }, range: rangePayload, alerts: { data: [] }, settings: { data: {} }, device: { data: {} } };
+        const fresh = { latest: { data: payload.data?.slice(-1)[0] || null }, range: rangePayload, alerts: { data: [] }, settings: { data: state.settings }, device: { data: {} } };
         renderOverview(fresh);
       });
     });

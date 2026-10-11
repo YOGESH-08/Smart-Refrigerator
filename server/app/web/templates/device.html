@@ -26,28 +26,21 @@
       </div>
       <form class="threshold-form" id="threshold-form">
         <label>
-          Temperature high (°C)
-          <input type="number" step="0.1" name="temperature_high_c" value="7" />
-        </label>
-        <label>
-          Gas rise delta (VOC)
-          <input type="number" step="0.1" name="gas_rise_delta" value="10" />
+          Temperature alarm limit (°C; fixed in firmware)
+          <input type="number" step="0.1" name="temperature_high_c" value="22" readonly />
         </label>
         <label>
           Door open timeout (s)
           <input type="number" step="1" name="door_open_seconds" value="180" />
         </label>
-        <label>
-          Low inventory (kg)
-          <input type="number" step="0.1" name="low_inventory_kg" value="2.5" />
-        </label>
+        <input type="hidden" name="gas_rise_delta" value="10" />
+        <input type="hidden" name="low_inventory_kg" value="2.5" />
         <label>
           Offline timeout (s)
           <input type="number" step="1" name="offline_seconds" value="90" />
         </label>
         <div class="button-row">
           <button class="primary-button" type="submit">Save thresholds</button>
-          <button class="secondary-button" type="button" id="reset-gas-baseline">Reset gas baseline</button>
         </div>
       </form>
     </section>

@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 *.db
 .DS_Store
+firmware/src/device_config.h
+server/.env

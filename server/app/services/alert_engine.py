@@ -28,7 +28,7 @@ def _iso(dt: datetime | None = None) -> str:
 
 def evaluate_temperature(value: float, state: AlertState | None, threshold: float, hysteresis: float = 1.5, min_duration_s: int = 120) -> AlertState:
     state = state or AlertState()
-    if value >= threshold:
+    if value > threshold:
         if not state.active:
             state.active = True
             state.first_seen = _iso()
@@ -38,7 +38,7 @@ def evaluate_temperature(value: float, state: AlertState | None, threshold: floa
         else:
             state.last_triggered = _iso()
         return state
-    clear_threshold = threshold - hysteresis
+    clear_threshold = threshold
     if state.active and value <= clear_threshold:
         state.active = False
         state.resolved = True
@@ -168,10 +168,14 @@ def build_alert_records(reading: dict[str, Any], thresholds: dict[str, float], b
 
 def process_reading(reading: dict[str, Any], thresholds: dict[str, float], baseline_gas: float, alert_state: dict[str, AlertState] | None = None) -> dict[str, AlertState]:
     state = alert_state or {}
-    state["temperature_high"] = evaluate_temperature(reading["temperature_c"], state.get("temperature_high"), thresholds["temperature_high_c"])
-    state["gas_rise"] = evaluate_gas_delta(reading["gas_voc"], baseline_gas, thresholds["gas_rise_delta"], state.get("gas_rise"))
-    state["door_open"] = evaluate_door_open(reading["door_open"], float(reading.get("door_open_seconds", 0.0)), thresholds["door_open_seconds"], state.get("door_open"))
-    state["low_inventory"] = evaluate_low_inventory(reading["weight_kg"], thresholds["low_inventory_kg"], state.get("low_inventory"))
+    if reading.get("temperature_c") is not None:
+        state["temperature_high"] = evaluate_temperature(reading["temperature_c"], state.get("temperature_high"), thresholds["temperature_high_c"])
+    if reading.get("gas_voc") is not None:
+        state["gas_rise"] = evaluate_gas_delta(reading["gas_voc"], baseline_gas, thresholds["gas_rise_delta"], state.get("gas_rise"))
+    if reading.get("door_sensor_verified", False):
+        state["door_open"] = evaluate_door_open(reading["door_open"], float(reading.get("door_open_seconds", 0.0)), thresholds["door_open_seconds"], state.get("door_open"))
+    if reading.get("weight_kg") is not None:
+        state["low_inventory"] = evaluate_low_inventory(reading["weight_kg"], thresholds["low_inventory_kg"], state.get("low_inventory"))
     return state
 
 

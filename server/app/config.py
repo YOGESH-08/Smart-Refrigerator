@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 
 class Config:
@@ -11,7 +13,7 @@ class Config:
     DEBUG = os.getenv("SMART_FRIDGE_DEBUG", "false").lower() == "true"
     RETENTION_DAYS = int(os.getenv("SMART_FRIDGE_RETENTION_DAYS", "7"))
     DEFAULT_THRESHOLDS = {
-        "temperature_high_c": 7.0,
+        "temperature_high_c": 22.0,
         "gas_rise_delta": 10.0,
         "door_open_seconds": 180.0,
         "low_inventory_kg": 2.5,

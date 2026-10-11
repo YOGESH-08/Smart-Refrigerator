@@ -9,15 +9,15 @@ from typing import Any
 import requests
 
 
-DEVICE_ID = "device-01"
+DEVICE_ID = "refrigerator-01"
 SCENARIOS = {
     "normal": {"temp_offset": 0.0, "gas_offset": 0.0, "weight_offset": 0.0, "door_open": False},
-    "warm": {"temp_offset": 6.0, "gas_offset": 25.0, "weight_offset": 0.0, "door_open": False},
-    "door": {"temp_offset": 1.0, "gas_offset": 5.0, "weight_offset": 0.0, "door_open": True},
-    "gas": {"temp_offset": 0.5, "gas_offset": 70.0, "weight_offset": 0.0, "door_open": False},
-    "lowstock": {"temp_offset": 0.0, "gas_offset": 0.0, "weight_offset": -2.5, "door_open": False},
-    "offline": {"temp_offset": 0.0, "gas_offset": 0.0, "weight_offset": 0.0, "door_open": False, "online": False},
-    "demo": {"temp_offset": 0.0, "gas_offset": 0.0, "weight_offset": 0.0, "door_open": False},
+    "warm": {"temp_offset": 19.0, "gas_offset": 25.0, "door_open": False},
+    "door": {"temp_offset": 1.0, "gas_offset": 5.0, "door_open": True},
+    "gas": {"temp_offset": 0.5, "gas_offset": 700.0, "door_open": False},
+    "lowstock": {"temp_offset": 0.0, "gas_offset": 0.0, "door_open": False},
+    "offline": {"temp_offset": 0.0, "gas_offset": 0.0, "door_open": False, "online": False},
+    "demo": {"temp_offset": 0.0, "gas_offset": 0.0, "door_open": False},
 }
 
 
@@ -28,17 +28,24 @@ def utc_now() -> str:
 def build_payload(scenario: str, tick: int) -> dict[str, Any]:
     base = SCENARIOS[scenario]
     temperature = 4.5 + random.gauss(0, 0.9) + base["temp_offset"] + (sin_like(tick) * 1.4)
-    humidity = 48.0 + random.gauss(0, 2.8)
-    gas = 110.0 + random.gauss(0, 12.0) + base["gas_offset"] + (max(0, 10 - tick % 60) * 0.8)
-    weight = max(0.0, 5.0 + base["weight_offset"] + random.gauss(0, 0.4))
+    gas = max(0, min(4095, round(1400 + random.gauss(0, 45) + base["gas_offset"] + (max(0, 10 - tick % 60) * 4))))
+    temperature_alarm = temperature > 22.0
     door_open = bool(base.get("door_open", False)) if scenario != "demo" else bool(tick % 30 < 12)
     payload = {
         "device_id": DEVICE_ID,
         "temperature_c": round(temperature, 2),
-        "humidity_pct": round(humidity, 2),
-        "gas_voc": round(gas, 2),
-        "weight_kg": round(weight, 2),
+        "gas_adc_raw": gas,
         "door_open": door_open,
+        "door_sensor_verified": False,
+        "temperature_sensor_ok": True,
+        "gas_sensor_ok": True,
+        "alarm_active": temperature_alarm,
+        "alarm_muted": False,
+        "mute_remaining_s": 0,
+        "fan_on": temperature_alarm,
+        "red_led_on": temperature_alarm,
+        "green_led_on": not temperature_alarm,
+        "buzzer_on": temperature_alarm,
         "battery_mv": round(3900 + random.gauss(0, 40), 1),
         "wifi_rssi_dbm": -62 + random.randint(-5, 5),
         "firmware_version": "1.1.0",
@@ -71,7 +78,7 @@ def run(api_url: str, interval: float, scenario: str, api_key: str) -> None:
         payload = build_payload(current, tick)
         response = requests.post(f"{api_url}/api/v1/readings", json=payload, headers={"X-API-Key": api_key}, timeout=5)
         response.raise_for_status()
-        print(f"[{utc_now()}] {current}: {payload['temperature_c']}C / {payload['gas_voc']} VOC / door={payload['door_open']} / weight={payload['weight_kg']} kg")
+        print(f"[{utc_now()}] {current}: {payload['temperature_c']}C / MQ-135 ADC={payload['gas_adc_raw']} / alarm={payload['alarm_active']}")
         tick += 1
         time.sleep(interval)
 
