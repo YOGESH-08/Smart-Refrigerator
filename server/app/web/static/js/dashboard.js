@@ -52,6 +52,48 @@ const isoToLocal = (value) => {
 };
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+
+const renderRFIDInventory = (items = []) => {
+  const container = document.getElementById('rfid-item-list');
+  if (!container) return;
+  if (container.contains(document.activeElement)) return;
+  if (!items.length) {
+    container.innerHTML = '<p class="empty-state">No RFID tags scanned yet. Scan a tag with the reader to add it here.</p>';
+    return;
+  }
+  container.innerHTML = items.map((item) => `
+    <form class="rfid-item-row" data-rfid-item-form data-uid="${escapeHtml(item.uid)}">
+      <div class="rfid-item-tag"><strong>${escapeHtml(item.item_name || 'New tag — name this item')}</strong><code>${escapeHtml(item.uid)}</code></div>
+      <label>Item name<input name="item_name" maxlength="80" required value="${escapeHtml(item.item_name || '')}" placeholder="e.g. Tomato" /></label>
+      <label>Count<input name="quantity" type="number" min="0" step="1" value="${Number(item.quantity) || 0}" /></label>
+      <button class="secondary-button" type="submit">Save</button>
+    </form>
+  `).join('');
+};
+
+document.addEventListener('submit', async (event) => {
+  const form = event.target.closest('[data-rfid-item-form]');
+  if (!form) return;
+  event.preventDefault();
+  const fields = new FormData(form);
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    await fetchJson(`/api/v1/rfid/items/${encodeURIComponent(form.dataset.uid)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_name: fields.get('item_name'), quantity: Number(fields.get('quantity')) }),
+    });
+    document.activeElement.blur();
+    notify('RFID item saved.');
+    await loadDashboardData();
+  } catch (error) {
+    notify(`Could not save RFID item: ${error.message}`);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 const renderSparkline = (selector, points) => {
   const svgPath = document.querySelector(selector);
@@ -72,6 +114,7 @@ const renderSparkline = (selector, points) => {
 };
 
 const renderOverview = (payload) => {
+  renderRFIDInventory(payload.rfidItems?.data || []);
   const latest = payload.latest?.data || null;
   if (!latest) {
     return;
@@ -171,9 +214,8 @@ const renderOverview = (payload) => {
   const scans = payload.rfidScans?.data || [];
   const scanList = document.getElementById('rfid-scan-list');
   if (scanList) {
-    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
     scanList.innerHTML = scans.length ? scans.slice(0, 8).map((scan) =>
-      `<li><span>${escapeHtml(scan.item_name || 'Unmapped tag')} · ${isoToLocal(scan.timestamp)}</span><strong>${escapeHtml(scan.uid)}</strong></li>`
+      `<li><span>${escapeHtml(scan.item_name || 'Unmapped tag')} · ${isoToLocal(scan.timestamp)}${scan.quantity ? ` · count ${scan.quantity}` : ''}</span><strong>${escapeHtml(scan.uid)}</strong></li>`
     ).join('') : '<li class="empty-state">No RFID scans recorded</li>';
   }
 
@@ -383,9 +425,10 @@ const loadDashboardData = async () => {
     const settings = await fetchJson('/api/v1/settings/thresholds');
     const device = await fetchJson('/api/v1/device/status');
     const rfidScans = await fetchJson('/api/v1/rfid/scans?limit=8');
+    const rfidItems = pageId === 'overview' ? await fetchJson('/api/v1/rfid/items') : { data: [] };
 
     state.settings = settings.data || {};
-    const payload = { latest, range, alerts, settings, device, rfidScans };
+    const payload = { latest, range, alerts, settings, device, rfidScans, rfidItems };
     if (pageId === 'overview') renderOverview(payload);
     if (pageId === 'analytics') renderAnalytics(payload);
     if (pageId === 'alerts') renderAlerts(payload);

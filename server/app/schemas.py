@@ -56,3 +56,16 @@ class RFIDScanPayload(BaseModel):
     @classmethod
     def normalize_identifier(cls, value: str) -> str:
         return value.strip()
+
+
+class RFIDItemUpdatePayload(BaseModel):
+    item_name: str = Field(min_length=1, max_length=80)
+    quantity: int | None = Field(default=None, ge=0, le=100000)
+
+    @field_validator("item_name")
+    @classmethod
+    def normalize_item_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Item name cannot be empty")
+        return value

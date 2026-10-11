@@ -66,7 +66,7 @@ The current firmware uses the DS18B20, MQ-135, reed switch (status unverified un
 
 1. Start Flask and verify `/health` in the computer browser.
 2. Flash the firmware, open the serial monitor, and wait for WiFi to connect. Confirm successful HTTP responses in serial output.
-3. Open the dashboard from the computer at `http://127.0.0.1:5000/`. Confirm temperature, raw gas ADC trend, sensor health, reported controller outputs, alarm/mute state, and RFID events. Door status remains **SENSOR UNVERIFIED** and door alarms stay disabled until the magnet and switch polarity are verified.
+3. Open the dashboard from the computer at `http://127.0.0.1:5000/`. Confirm temperature, raw gas ADC trend, sensor health, reported controller outputs, alarm/mute state, and RFID events. The first scan of a tag creates a count of one. In **RFID food inventory**, enter its food name (such as Tomato); later scans of that tag increase the count. You can edit the name or count there. Door status remains **SENSOR UNVERIFIED** and door alarms stay disabled until the magnet and switch polarity are verified.
 4. To verify ingestion independently, use `GET http://127.0.0.1:5000/api/v1/readings/latest` in a browser or send an authenticated POST to `/api/v1/readings`. The endpoint accepts null/omitted temperature, gas, humidity, and weight; missing sensors are not represented as invented measurements.
 
 ## Calibration procedure

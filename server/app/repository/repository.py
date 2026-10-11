@@ -84,6 +84,9 @@ class Repository:
             )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_rfid_scans_timestamp ON rfid_scans(timestamp DESC)")
             conn.execute(
+                "CREATE TABLE IF NOT EXISTS rfid_items (uid TEXT PRIMARY KEY, item_name TEXT, quantity INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)"
+            )
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
@@ -248,12 +251,49 @@ class Repository:
     def insert_rfid_scan(self, payload: dict[str, Any]) -> dict[str, Any]:
         current = _utc_now_iso()
         with self.get_connection() as conn:
+            item = conn.execute("SELECT * FROM rfid_items WHERE uid = ?", (payload["uid"],)).fetchone()
+            if item is None:
+                conn.execute(
+                    "INSERT INTO rfid_items(uid, item_name, quantity, updated_at) VALUES (?, NULL, 1, ?)",
+                    (payload["uid"], current),
+                )
+                item_name, quantity = None, 1
+            else:
+                quantity = int(item["quantity"]) + 1
+                item_name = item["item_name"]
+                conn.execute(
+                    "UPDATE rfid_items SET quantity = ?, updated_at = ? WHERE uid = ?",
+                    (quantity, current, payload["uid"]),
+                )
             cursor = conn.execute(
                 "INSERT INTO rfid_scans(device_id, uid, item_name, firmware_version, timestamp, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (payload["device_id"], payload["uid"], payload.get("item_name"), payload.get("firmware_version"), current, current),
+                (payload["device_id"], payload["uid"], item_name, payload.get("firmware_version"), current, current),
             )
             row = conn.execute("SELECT * FROM rfid_scans WHERE id = ?", (cursor.lastrowid,)).fetchone()
-            return dict(row)
+            result = dict(row)
+            result["quantity"] = quantity
+            return result
+
+    def get_rfid_items(self) -> list[dict[str, Any]]:
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT uid, item_name, quantity, updated_at FROM rfid_items ORDER BY COALESCE(item_name, ''), uid"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def update_rfid_item(self, uid: str, item_name: str, quantity: int | None = None) -> dict[str, Any] | None:
+        current = _utc_now_iso()
+        with self.get_connection() as conn:
+            existing = conn.execute("SELECT * FROM rfid_items WHERE uid = ?", (uid,)).fetchone()
+            if existing is None:
+                return None
+            new_quantity = int(existing["quantity"]) if quantity is None else quantity
+            conn.execute(
+                "UPDATE rfid_items SET item_name = ?, quantity = ?, updated_at = ? WHERE uid = ?",
+                (item_name, new_quantity, current, uid),
+            )
+            conn.execute("UPDATE rfid_scans SET item_name = ? WHERE uid = ?", (item_name, uid))
+            return dict(conn.execute("SELECT * FROM rfid_items WHERE uid = ?", (uid,)).fetchone())
 
     def get_rfid_scans(self, limit: int = 20) -> list[dict[str, Any]]:
         with self.get_connection() as conn:

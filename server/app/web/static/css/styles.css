@@ -60,6 +60,10 @@ button {
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
   border-right: 1px solid var(--border);
   background: var(--panel-soft);
   display: flex;
@@ -467,6 +471,49 @@ select, input {
   font-weight: 600;
 }
 
+.muted {
+  color: var(--muted);
+}
+
+.rfid-item-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rfid-item-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(160px, 1fr) 110px auto;
+  align-items: end;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+}
+
+.rfid-item-row label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rfid-item-row input {
+  width: 100%;
+  min-width: 0;
+}
+
+.rfid-item-tag {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rfid-item-tag code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .button-row {
   display: flex;
   gap: 10px;
@@ -494,6 +541,8 @@ select, input {
   }
 
   .sidebar {
+    position: static;
+    height: auto;
     border-right: none;
     border-bottom: 1px solid var(--border);
     padding-bottom: 14px;
@@ -506,6 +555,10 @@ select, input {
 
   .kpi-grid, .main-panel-grid, .two-panel-grid {
     grid-template-columns: 1fr;
+  }
+
+  .rfid-item-row {
+    grid-template-columns: 1fr 1fr;
   }
 
   .overview-page > .kpi-grid { grid-template-columns: 1fr; }
@@ -523,5 +576,9 @@ select, input {
   .toolbar {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .rfid-item-row {
+    grid-template-columns: 1fr;
   }
 }

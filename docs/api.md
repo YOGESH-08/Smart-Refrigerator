@@ -82,11 +82,23 @@ Content-Type: application/json
 }
 ```
 
-The server timestamps and stores the scan. A UID is only an identifier; the dashboard labels it as unmapped unless an explicit product mapping is added.
+The server timestamps and stores the scan. Every scan creates or increments the count for that UID. New tags start as unnamed items with a count of one; assign the food name in **Overview → RFID food inventory**. Later scans increment the count. You can edit both the item name and count in the dashboard.
 
 ```http
 GET /api/v1/rfid/scans?limit=20
+GET /api/v1/rfid/items
+PUT /api/v1/rfid/items/AB%3A12%3ACD%3A34
+Content-Type: application/json
 ```
+
+```json
+{
+  "item_name": "Tomato",
+  "quantity": 1
+}
+```
+
+The dashboard item update endpoint accepts a name and optional quantity. It is intended for the local dashboard; the scanner POST continues to require the device API key.
 
 ## GET readings with time filtering
 
