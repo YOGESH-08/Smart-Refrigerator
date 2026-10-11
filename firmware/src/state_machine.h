@@ -31,7 +31,7 @@ class FridgeStateMachine {
   }
 
   bool warningActive() const {
-    return temperature_warning_ || gas_warning_;
+    return temperature_warning_;
   }
 
  private:

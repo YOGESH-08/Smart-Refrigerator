@@ -138,7 +138,8 @@ namespace {
                   static_cast<unsigned long>(wifi_retry_ms));
     last_wifi_attempt_ms = now_ms;
     WiFi.reconnect();
-    wifi_retry_ms = min(wifi_retry_ms * 2UL, WIFI_RETRY_MAX_MS);
+    const uint32_t next_retry_ms = wifi_retry_ms * static_cast<uint32_t>(2);
+    wifi_retry_ms = next_retry_ms < WIFI_RETRY_MAX_MS ? next_retry_ms : WIFI_RETRY_MAX_MS;
   }
 
   void flushOneReading() {
