@@ -58,7 +58,8 @@ class SensorSubsystem {
     result.temperature_valid = temperature_valid_;
     result.gas_adc_raw = gas;
     result.gas_valid = gas > 1 && gas < 4094;
-    result.door_open = digitalRead(REED_SWITCH_PIN) == LOW;
+    // This installation reads LOW with the magnet near (door closed).
+    result.door_open = digitalRead(REED_SWITCH_PIN) == HIGH;
     result.door_sensor_verified = DOOR_SENSOR_VERIFIED;
     result.silence_pressed = touchPressed();
     result.touch_pressed = result.silence_pressed;

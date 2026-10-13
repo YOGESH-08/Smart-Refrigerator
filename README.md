@@ -51,7 +51,7 @@ flowchart LR
 
 ## Firmware flash steps
 
-The current firmware uses the DS18B20, MQ-135, reed switch (GPIO27 active LOW), TTP223, and RC522. The reed switch reports open/closed status and triggers a door alert after 180 seconds open; verify the installed magnet and switch polarity during hardware setup. Load cell and humidity are excluded. MQ-135 readings are raw ADC (0–4095), not calibrated ppm or a food-spoilage verdict.
+The current firmware uses the DS18B20, MQ-135, reed switch (GPIO27 reads LOW closed and HIGH open), TTP223, and RC522. The reed switch reports open/closed status and triggers a door alert after 180 seconds open. Load cell and humidity are excluded. MQ-135 readings are raw ADC (0–4095), not calibrated ppm or a food-spoilage verdict.
 
 1. Copy `firmware/src/device_config.example.h` to `firmware/src/device_config.h` and fill in the 2.4 GHz WiFi SSID/password, device ID, API key, and server URL. Use the same API key as `SMART_FRIDGE_API_KEY` in `server/.env`. This local secrets file is ignored by Git.
 2. Keep the ESP32 and the computer running Flask on the same WiFi/hotspot. Find the computer's IPv4 address with `ipconfig` and use it in `API_ENDPOINT`, for example `http://192.168.1.23:5000/api/v1/readings`. Do not use `localhost` or `127.0.0.1` in the ESP32 URL: those addresses refer to the ESP32 itself. If using a phone hotspot, use the computer's hotspot-network IPv4 address; some hotspots block communication between clients.

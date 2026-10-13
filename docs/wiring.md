@@ -6,7 +6,7 @@ Use the ESP32 DevKit V1 (30-pin) pin assignments below. Disconnect USB power whi
 | --- | --- | --- |
 | DS18B20 DATA | GPIO4 | 4.7 kΩ pull-up from DATA to 3.3 V |
 | MQ-135 AO | GPIO34 | ADC1 input; reduce AO to 3.3 V or less with a suitable divider; readings are raw 0–4095 ADC counts |
-| Reed switch | GPIO27 | `INPUT_PULLUP`; connect the switch between GPIO27 and GND; active LOW means door open |
+| Reed switch | GPIO27 | `INPUT_PULLUP`; connect the switch between GPIO27 and GND; this installation reads LOW closed and HIGH open |
 | TTP223 OUT | GPIO14 | Assumed HIGH on touch; verify your module's output mode |
 | RC522 SDA/SS | GPIO5 | 3.3 V only |
 | RC522 SCK | GPIO18 | SPI clock |
@@ -24,7 +24,7 @@ Use the ESP32 DevKit V1 (30-pin) pin assignments below. Disconnect USB power whi
 - Join ESP32 ground and external fan-supply ground. Add suitable transient protection for the fan, and verify the BC547 current rating against the fan's start-up current.
 - Do not connect 5 V directly to GPIO34. ESP32 inputs are not 5 V tolerant.
 - MQ-135 readings are for relative trend only; they are not calibrated ppm, food spoilage detection, or a safety assessment.
-- Reed reporting and the door alarm are enabled. Firmware treats GPIO27 LOW as open and sounds the door alarm after 180 seconds continuously open. Verify that your switch and magnet produce LOW when the door opens; if not, adjust the active level in `sensors.h` before relying on alerts.
+- Reed reporting and the door alarm are enabled. Firmware treats GPIO27 HIGH as open and sounds the door alarm after 180 seconds continuously open. With your observed behavior, the magnet near the switch (door closed) reads LOW; separating them (door open) reads HIGH.
 - A TTP223 touch edge mutes the buzzer for 30 seconds; the red LED and fan remain commanded on while the temperature alarm persists.
 - The dashboard reports firmware-commanded outputs. The current hardware has no actuator feedback sensors, so it cannot verify that a fan, LED, or buzzer physically operated.
 - Load cell/HX711 and humidity are excluded from this firmware.

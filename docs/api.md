@@ -34,7 +34,7 @@ Content-Type: application/json
 }
 ```
 
-`gas_adc_raw` is the MQ-135 ADC count from 0–4095. It is a relative reading, not ppm or a food-safety result. Temperature sensor failures are represented by `temperature_c: null` and `temperature_sensor_ok: false`. The reed sensor is reported as verified and door alerts are evaluated when `door_sensor_verified` is true; hardware installation must confirm that GPIO27 goes LOW when the door opens. No humidity or load-cell data is sent. Actuator fields report commanded output states, not physical feedback.
+`gas_adc_raw` is the MQ-135 ADC count from 0–4095. It is a relative reading, not ppm or a food-safety result. Temperature sensor failures are represented by `temperature_c: null` and `temperature_sensor_ok: false`. The reed sensor is reported as verified and door alerts are evaluated when `door_sensor_verified` is true. This installation maps GPIO27 LOW to closed and HIGH to open. No humidity or load-cell data is sent. Actuator fields report commanded output states, not physical feedback.
 
 ### Response
 
