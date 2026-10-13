@@ -29,6 +29,7 @@ namespace {
   uint32_t boot_ms = 0;
   uint32_t mute_until_ms = 0;
   bool touch_was_pressed = false;
+  volatile bool touch_press_pending = false;
   uint32_t last_command_poll_ms = 0;
   uint32_t last_rfid_wait_log_ms = 0;
   volatile bool rfid_reader_ok = false;
@@ -40,6 +41,10 @@ namespace {
   static constexpr size_t RFID_UID_TEXT_LENGTH = 30;
   struct RfidScan { char uid[RFID_UID_TEXT_LENGTH]; };
   QueueHandle_t rfid_queue = nullptr;
+
+  void IRAM_ATTR onTouchPressed() {
+    touch_press_pending = true;
+  }
 
   void configureWatchdog() {
 #if ESP_IDF_VERSION_MAJOR >= 5
@@ -76,7 +81,11 @@ namespace {
     const bool warning = state_machine.warningActive();
     const bool alert = door_alert || warning;
     const bool touch_pressed = sensors.touchPressed();
-    if (touch_pressed && !touch_was_pressed && alert) {
+    noInterrupts();
+    const bool touch_event = touch_press_pending;
+    touch_press_pending = false;
+    interrupts();
+    if ((touch_event || (touch_pressed && !touch_was_pressed)) && alert) {
       mute_until_ms = now_ms + ALARM_MUTE_MS;
       const bool acknowledged = network.acknowledgeCurrentAlert();
       Serial.printf("Touch alert: buzzer muted for 30s; current alert acknowledgement %s\n",
@@ -190,6 +199,7 @@ void setup() {
   boot_ms = millis();
   actuators.begin();
   sensors.begin();
+  attachInterrupt(digitalPinToInterrupt(TTP223_PIN), onTouchPressed, RISING);
   network.begin();
   pinMode(RFID_SS_PIN, OUTPUT);
   digitalWrite(RFID_SS_PIN, HIGH);
