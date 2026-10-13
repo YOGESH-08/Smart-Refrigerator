@@ -31,15 +31,15 @@ namespace {
   bool touch_was_pressed = false;
   uint32_t last_command_poll_ms = 0;
   uint32_t last_rfid_wait_log_ms = 0;
-  bool rfid_reader_ok = false;
+  volatile bool rfid_reader_ok = false;
   SensorReadings current_sample{};
   FridgeState current_state = FridgeState::NORMAL;
   ActuatorStates current_actuators{};
   MFRC522 rfid(RFID_SS_PIN, RFID_RST_PIN);
-  static constexpr size_t RFID_QUEUE_CAPACITY = 8;
-  String rfid_queue[RFID_QUEUE_CAPACITY];
-  size_t rfid_head = 0;
-  size_t rfid_count = 0;
+  static constexpr UBaseType_t RFID_QUEUE_CAPACITY = 8;
+  static constexpr size_t RFID_UID_TEXT_LENGTH = 30;
+  struct RfidScan { char uid[RFID_UID_TEXT_LENGTH]; };
+  QueueHandle_t rfid_queue = nullptr;
 
   void configureWatchdog() {
 #if ESP_IDF_VERSION_MAJOR >= 5
@@ -107,41 +107,58 @@ namespace {
     }
   }
 
-  void scanRfidCard() {
-    if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
+  void rfidPollingTask(void*) {
+    uint32_t last_health_check_ms = 0;
+    for (;;) {
       const uint32_t now = millis();
-      if (now - last_rfid_wait_log_ms >= 5000UL) {
-        last_rfid_wait_log_ms = now;
-        Serial.printf("RFID %s; waiting for card (RC522 pins SS=%u SCK=18 MOSI=23 MISO=19 RST=%u)\n",
-                      rfid_reader_ok ? "ready" : "NOT DETECTED", RFID_SS_PIN, RFID_RST_PIN);
+      if (now - last_health_check_ms >= 5000UL) {
+        last_health_check_ms = now;
+        const byte version = rfid.PCD_ReadRegister(MFRC522::VersionReg);
+        rfid_reader_ok = version != 0x00 && version != 0xFF;
+        if (rfid_reader_ok) {
+          Serial.printf("RFID reader communication OK (VersionReg=0x%02X); polling for cards\n", version);
+        } else {
+          Serial.printf("RFID reader communication FAILED (VersionReg=0x%02X; SS=%u SCK=18 MOSI=23 MISO=19 RST=%u)\n",
+                        version, RFID_SS_PIN, RFID_RST_PIN);
+        }
       }
-      return;
+
+      if (rfid_reader_ok) {
+        if (!rfid.PICC_IsNewCardPresent()) {
+          if (now - last_rfid_wait_log_ms >= 5000UL) {
+            last_rfid_wait_log_ms = now;
+            Serial.println("RFID reader communicating; no new card detected");
+          }
+        } else if (!rfid.PICC_ReadCardSerial()) {
+          Serial.println("RFID card field detected, but UID read failed");
+        } else {
+          RfidScan scan{};
+          size_t offset = 0;
+          for (byte index = 0; index < rfid.uid.size && offset + 3 < sizeof(scan.uid); ++index) {
+            const int written = snprintf(scan.uid + offset, sizeof(scan.uid) - offset,
+                                         index ? ":%02X" : "%02X", rfid.uid.uidByte[index]);
+            if (written > 0) offset += static_cast<size_t>(written);
+          }
+          Serial.printf("RFID UID: %s\n", scan.uid);
+          if (xQueueSend(rfid_queue, &scan, 0) != pdTRUE) {
+            RfidScan discarded{};
+            xQueueReceive(rfid_queue, &discarded, 0);
+            xQueueSend(rfid_queue, &scan, 0);
+            Serial.println("RFID offline queue full; dropped oldest scan");
+          }
+          rfid.PICC_HaltA();
+          rfid.PCD_StopCrypto1();
+        }
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
     }
-    String uid;
-    for (byte index = 0; index < rfid.uid.size; ++index) {
-      if (index) uid += ':';
-      if (rfid.uid.uidByte[index] < 0x10) uid += '0';
-      uid += String(rfid.uid.uidByte[index], HEX);
-    }
-    uid.toUpperCase();
-    Serial.printf("RFID UID: %s\n", uid.c_str());
-    if (rfid_count == RFID_QUEUE_CAPACITY) {
-      rfid_head = (rfid_head + 1) % RFID_QUEUE_CAPACITY;
-      --rfid_count;
-      Serial.println("RFID offline queue full; dropping oldest scan");
-    }
-    rfid_queue[(rfid_head + rfid_count) % RFID_QUEUE_CAPACITY] = uid;
-    ++rfid_count;
-    rfid.PICC_HaltA();
-    rfid.PCD_StopCrypto1();
   }
 
   void flushOneRfidScan() {
-    if (!network.isConnected() || rfid_count == 0) return;
-    if (network.sendRfidScan(rfid_queue[rfid_head])) {
-      rfid_head = (rfid_head + 1) % RFID_QUEUE_CAPACITY;
-      --rfid_count;
-    }
+    if (rfid_queue == nullptr || !network.isConnected()) return;
+    RfidScan scan{};
+    if (xQueuePeek(rfid_queue, &scan, 0) != pdTRUE) return;
+    if (network.sendRfidScan(String(scan.uid))) xQueueReceive(rfid_queue, &scan, 0);
   }
 
   void reconnectWiFi(uint32_t now_ms) {
@@ -174,6 +191,8 @@ void setup() {
   actuators.begin();
   sensors.begin();
   network.begin();
+  pinMode(RFID_SS_PIN, OUTPUT);
+  digitalWrite(RFID_SS_PIN, HIGH);
   SPI.begin(18, 19, 23, RFID_SS_PIN);
   rfid.PCD_Init();
   delay(4);
@@ -187,6 +206,13 @@ void setup() {
   Serial.printf("RC522 version register: 0x%02X%s\n", rfid_version,
                 (rfid_version == 0x00 || rfid_version == 0xFF) ? " (reader not detected: check 3.3V, GND, and SPI wiring)" : " (reader detected)");
   rfid_reader_ok = rfid_version != 0x00 && rfid_version != 0xFF;
+  rfid_queue = xQueueCreate(RFID_QUEUE_CAPACITY, sizeof(RfidScan));
+  if (rfid_queue == nullptr) {
+    Serial.println("RFID scan queue allocation failed; polling task not started");
+    return;
+  }
+  const BaseType_t task_result = xTaskCreatePinnedToCore(rfidPollingTask, "rfid_poll", 4096, nullptr, 2, nullptr, 0);
+  if (task_result != pdPASS) Serial.println("RFID polling task creation failed");
 }
 
 void loop() {
@@ -233,7 +259,6 @@ void loop() {
       applyLocalControl(now_ms);
     }
   }
-  scanRfidCard();
   flushOneRfidScan();
   reconnectWiFi(now_ms);
   flushOneReading();
