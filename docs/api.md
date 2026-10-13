@@ -132,7 +132,7 @@ Content-Type: application/json
 
 ```json
 {
-  "temperature_high_c": 22.0,
+  "temperature_high_c": 29.0,
   "gas_rise_delta": 12.0,
   "door_open_seconds": 200,
   "low_inventory_kg": 3.0,
@@ -140,7 +140,7 @@ Content-Type: application/json
 }
 ```
 
-The ESP32's temperature limit is fixed at 22°C in firmware. Keep this server threshold at 22°C so dashboard alerting agrees with the controller.
+The ESP32's temperature limit is fixed at 29°C in firmware. Keep this server threshold at 29°C so dashboard alerting agrees with the controller.
 
 ## CSV export
 
