@@ -90,6 +90,7 @@ const renderLiveReading = (latest) => {
   const doorVerified = Boolean(latest.door_sensor_verified);
   const threshold = Number(state.settings.temperature_high_c);
   const tempAlert = temperature != null && Number.isFinite(threshold) && temperature > threshold;
+  const doorAlert = doorVerified && doorOpen && Number(latest.door_open_seconds || 0) >= Number(state.settings.door_open_seconds || 180);
   const temperatureHealthy = latest.temperature_sensor_ok !== false && latest.temperature_sensor_ok !== 0 && temperature != null;
   const gasHealthy = latest.gas_sensor_ok !== false && latest.gas_sensor_ok !== 0 && gas != null;
   setText('temperature-value', temperature == null ? '--' : temperature.toFixed(1));
@@ -113,10 +114,10 @@ const renderLiveReading = (latest) => {
   setText('pin-touch', latest.touch_pressed == null ? 'No device report' : (latest.touch_pressed ? 'Pressed' : 'Released'));
   setText('rfid-reader-state', latest.rfid_reader_ok == null ? 'No device report' : (latest.rfid_reader_ok ? 'Reader detected · ready for tag' : 'Reader not detected'));
   setText('pin-outputs', `Fan ${latest.fan_on == null ? '—' : (latest.fan_on ? 'ON' : 'OFF')} · Buzzer ${latest.buzzer_on == null ? '—' : (latest.buzzer_on ? 'ON' : 'OFF')}`);
-  setText('system-state', !temperatureHealthy ? 'Temperature sensor error' : (tempAlert ? 'Warning' : 'Normal'));
+  setText('system-state', !temperatureHealthy ? 'Temperature sensor error' : (doorAlert ? 'Door alert' : (tempAlert ? 'Warning' : 'Normal')));
   const status = document.getElementById('device-status-pill');
   if (status) {
-    status.textContent = !temperatureHealthy ? 'Sensor error' : (doorVerified ? (doorOpen ? 'Door open' : 'Door closed') : 'Door unverified');
+    status.textContent = !temperatureHealthy ? 'Sensor error' : (doorAlert ? 'Door open too long' : (doorVerified ? (doorOpen ? 'Door open' : 'Door closed') : 'Door unverified'));
     status.className = `pill ${!temperatureHealthy ? 'red' : (doorOpen && doorVerified ? 'amber' : 'green')}`;
   }
 };
@@ -281,7 +282,7 @@ const renderOverview = (payload) => {
     const samples = payload.range?.data || [];
     const eventsList = samples.filter((row) => row.door_open).slice(0, 4);
     if (!doorVerified) {
-      timeline.innerHTML = '<div class="empty-state">Door sensor unverified until magnet and switch polarity are checked.</div>';
+      timeline.innerHTML = '<div class="empty-state">Door sensor status is unverified.</div>';
     } else if (!eventsList.length) {
       timeline.innerHTML = '<div class="empty-state">No door events in selected range</div>';
     } else {

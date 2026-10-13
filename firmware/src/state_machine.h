@@ -24,7 +24,8 @@ class FridgeStateMachine {
     }
 
     if (sample.temperature_valid) temperature_warning_ = sample.temperature_c > TEMP_HIGH_C;
-    const bool door_alert = ENABLE_DOOR_ALARM && door_open_;
+    const bool door_alert = ENABLE_DOOR_ALARM && door_open_ &&
+                            (now_ms - door_open_since_ms_ >= DOOR_ALARM_DELAY_MS);
     state_ = door_alert ? FridgeState::DOOR_ALERT
                         : (temperature_warning_ ? FridgeState::WARNING : FridgeState::NORMAL);
     return state_;

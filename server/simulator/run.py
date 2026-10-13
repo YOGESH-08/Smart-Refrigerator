@@ -25,27 +25,31 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def build_payload(scenario: str, tick: int) -> dict[str, Any]:
+def build_payload(scenario: str, tick: int, interval: float = 2.0) -> dict[str, Any]:
     base = SCENARIOS[scenario]
     temperature = 4.5 + random.gauss(0, 0.9) + base["temp_offset"] + (sin_like(tick) * 1.4)
     gas = max(0, min(4095, round(1400 + random.gauss(0, 45) + base["gas_offset"] + (max(0, 10 - tick % 60) * 4))))
     temperature_alarm = temperature > 29.0
     door_open = bool(base.get("door_open", False)) if scenario != "demo" else bool(tick % 30 < 12)
+    open_ticks = tick % 30 if scenario == "demo" else tick
+    door_open_seconds = int(open_ticks * interval) if door_open else 0
+    door_alarm = door_open and door_open_seconds >= 180
     payload = {
         "device_id": DEVICE_ID,
         "temperature_c": round(temperature, 2),
         "gas_adc_raw": gas,
         "door_open": door_open,
-        "door_sensor_verified": False,
+        "door_open_seconds": door_open_seconds,
+        "door_sensor_verified": True,
         "temperature_sensor_ok": True,
         "gas_sensor_ok": True,
-        "alarm_active": temperature_alarm,
+        "alarm_active": temperature_alarm or door_alarm,
         "alarm_muted": False,
         "mute_remaining_s": 0,
         "fan_on": temperature_alarm,
-        "red_led_on": temperature_alarm,
-        "green_led_on": not temperature_alarm,
-        "buzzer_on": temperature_alarm,
+        "red_led_on": temperature_alarm or door_alarm,
+        "green_led_on": not (temperature_alarm or door_alarm),
+        "buzzer_on": temperature_alarm or door_alarm,
         "battery_mv": round(3900 + random.gauss(0, 40), 1),
         "wifi_rssi_dbm": -62 + random.randint(-5, 5),
         "firmware_version": "1.1.0",
@@ -75,7 +79,7 @@ def run(api_url: str, interval: float, scenario: str, api_key: str) -> None:
             time.sleep(interval)
             tick += 1
             continue
-        payload = build_payload(current, tick)
+        payload = build_payload(current, tick, interval)
         response = requests.post(f"{api_url}/api/v1/readings", json=payload, headers={"X-API-Key": api_key}, timeout=5)
         response.raise_for_status()
         print(f"[{utc_now()}] {current}: {payload['temperature_c']}C / MQ-135 ADC={payload['gas_adc_raw']} / alarm={payload['alarm_active']}")

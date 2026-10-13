@@ -51,7 +51,7 @@ flowchart LR
 
 ## Firmware flash steps
 
-The current firmware uses the DS18B20, MQ-135, reed switch (status unverified until the magnet is installed), TTP223, and RC522. Load cell and humidity are excluded. MQ-135 readings are raw ADC (0–4095), not calibrated ppm or a food-spoilage verdict.
+The current firmware uses the DS18B20, MQ-135, reed switch (GPIO27 active LOW), TTP223, and RC522. The reed switch reports open/closed status and triggers a door alert after 180 seconds open; verify the installed magnet and switch polarity during hardware setup. Load cell and humidity are excluded. MQ-135 readings are raw ADC (0–4095), not calibrated ppm or a food-spoilage verdict.
 
 1. Copy `firmware/src/device_config.example.h` to `firmware/src/device_config.h` and fill in the 2.4 GHz WiFi SSID/password, device ID, API key, and server URL. Use the same API key as `SMART_FRIDGE_API_KEY` in `server/.env`. This local secrets file is ignored by Git.
 2. Keep the ESP32 and the computer running Flask on the same WiFi/hotspot. Find the computer's IPv4 address with `ipconfig` and use it in `API_ENDPOINT`, for example `http://192.168.1.23:5000/api/v1/readings`. Do not use `localhost` or `127.0.0.1` in the ESP32 URL: those addresses refer to the ESP32 itself. If using a phone hotspot, use the computer's hotspot-network IPv4 address; some hotspots block communication between clients.
@@ -66,7 +66,7 @@ The current firmware uses the DS18B20, MQ-135, reed switch (status unverified un
 
 1. Start Flask and verify `/health` in the computer browser.
 2. Flash the firmware, open the serial monitor, and wait for WiFi to connect. Confirm successful HTTP responses in serial output.
-3. Open the dashboard from the computer at `http://127.0.0.1:5000/`. Confirm temperature, raw gas ADC trend, sensor health, reported controller outputs, alarm/mute state, and RFID events. The first scan of a tag creates a count of one. In **RFID food inventory**, enter its food name (such as Tomato); later scans of that tag increase the count. You can edit the name or count there. Door status remains **SENSOR UNVERIFIED** and door alarms stay disabled until the magnet and switch polarity are verified.
+3. Open the dashboard from the computer at `http://127.0.0.1:5000/`. Confirm temperature, raw gas ADC trend, reed-switch door status, sensor health, reported controller outputs, alarm/mute state, and RFID events. The first scan of a tag creates a count of one. In **RFID food inventory**, enter its food name (such as Tomato); later scans of that tag increase the count. You can edit the name or count there. The dashboard shows door-open status immediately and a door alert after the configured timeout.
 4. To verify ingestion independently, use `GET http://127.0.0.1:5000/api/v1/readings/latest` in a browser or send an authenticated POST to `/api/v1/readings`. The endpoint accepts null/omitted temperature, gas, humidity, and weight; missing sensors are not represented as invented measurements.
 
 ## Calibration procedure

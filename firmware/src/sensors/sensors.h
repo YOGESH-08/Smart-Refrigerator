@@ -59,6 +59,7 @@ class SensorSubsystem {
     result.gas_adc_raw = gas;
     result.gas_valid = gas > 1 && gas < 4094;
     result.door_open = digitalRead(REED_SWITCH_PIN) == LOW;
+    result.door_sensor_verified = DOOR_SENSOR_VERIFIED;
     result.silence_pressed = touchPressed();
     result.touch_pressed = result.silence_pressed;
     return result;

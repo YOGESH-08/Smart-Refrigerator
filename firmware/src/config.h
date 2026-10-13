@@ -16,7 +16,10 @@ static constexpr uint8_t GREEN_LED_PIN = 21;
 
 static constexpr float TEMP_HIGH_C = 29.0f;
 static constexpr uint32_t ALARM_MUTE_MS = 30000UL;
-static constexpr bool ENABLE_DOOR_ALARM = false;
+static constexpr uint32_t DOOR_ALARM_DELAY_MS = 180000UL;
+// GPIO27 uses INPUT_PULLUP and an active-low reed switch.
+static constexpr bool DOOR_SENSOR_VERIFIED = true;
+static constexpr bool ENABLE_DOOR_ALARM = true;
 
 static constexpr size_t MAX_OFFLINE_RING_BUFFER = 32;
 static constexpr uint32_t WIFI_RETRY_INITIAL_MS = 2000UL;
