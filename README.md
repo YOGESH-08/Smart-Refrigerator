@@ -18,7 +18,7 @@ flowchart LR
 ## Features
 
 - ESP32 reads DS18B20 temperature, MQ-135 raw ADC, reed-switch state, TTP223 mute touch, and RC522 RFID scans
-- Local temperature alarm above 29°C commands the fan, red/green LEDs, and buzzer; touch mutes the buzzer for 30 seconds
+- Local temperature alarm above 25°C commands the fan, red/green LEDs, and buzzer; touch mutes the buzzer for 30 seconds
 - RFID scans are stored as UID events; food names require an explicit UID-to-item mapping
 - Flask API with authentication, validation, alert lifecycle, and retention logic
 - SQLite-backed persistence with WAL mode and indexed timestamps
@@ -75,7 +75,7 @@ The current firmware uses the DS18B20, MQ-135, reed switch (GPIO27 reads LOW clo
 2. For DS18B20, confirm the reading is within a plausible range. A disconnected sensor is marked unavailable rather than replaced with a fabricated value.
 3. Let the MQ-135 warm up according to its datasheet, observe raw ADC readings, and validate response to a safe, controlled test. Raw ADC is a relative trend, not ppm.
 4. Confirm the reed switch reads closed with the magnet at the switch and open when separated; change the active level in firmware only if your module is wired differently.
-5. Above 29°C, confirm fan, red LED, and buzzer commands turn on. A TTP223 touch should mute the buzzer for 30 seconds while the red LED and fan remain on. At 29°C or below, the alarm clears and the green LED is commanded on.
+5. Above 25°C, confirm fan, red LED, and buzzer commands turn on. A TTP223 touch should mute the buzzer for 30 seconds while the red LED and fan remain on. At 25°C or below, the alarm clears and the green LED is commanded on.
 6. Scan a 13.56 MHz RFID card or key fob and check **Recent RFID scans**. A UID is only an identifier; no food name is inferred without a mapping.
 
 ## Demo script

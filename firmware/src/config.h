@@ -14,7 +14,7 @@ static constexpr uint8_t BUZZER_PIN = 13;
 static constexpr uint8_t RED_LED_PIN = 15;
 static constexpr uint8_t GREEN_LED_PIN = 21;
 
-static constexpr float TEMP_HIGH_C = 29.0f;
+static constexpr float TEMP_HIGH_C = 25.0f;
 static constexpr uint32_t ALARM_MUTE_MS = 30000UL;
 static constexpr uint32_t DOOR_ALARM_DELAY_MS = 180000UL;
 // GPIO27 uses INPUT_PULLUP; this installation reads LOW with the door closed.

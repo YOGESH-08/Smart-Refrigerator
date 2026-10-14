@@ -181,7 +181,7 @@ class Repository:
 
     def _ensure_defaults(self, conn: sqlite3.Connection) -> None:
         defaults = {
-            "temperature_high_c": "29.0",
+            "temperature_high_c": "25.0",
             "gas_rise_delta": "10.0",
             "door_open_seconds": "180.0",
             "low_inventory_kg": "2.5",
@@ -193,7 +193,7 @@ class Repository:
                 "INSERT OR IGNORE INTO settings(key, value, updated_at) VALUES (?, ?, ?)",
                 (key, value, _utc_now_iso()),
             )
-        conn.execute("UPDATE settings SET value = '29.0' WHERE key = 'temperature_high_c' AND value IN ('7.0', '22.0')")
+        conn.execute("UPDATE settings SET value = '25.0' WHERE key = 'temperature_high_c' AND value IN ('7.0', '22.0')")
 
     def insert_reading(self, payload: dict[str, Any]) -> dict[str, Any]:
         current = _utc_now_iso()

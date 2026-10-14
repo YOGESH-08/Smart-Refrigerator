@@ -29,7 +29,7 @@ def build_payload(scenario: str, tick: int, interval: float = 2.0) -> dict[str, 
     base = SCENARIOS[scenario]
     temperature = 4.5 + random.gauss(0, 0.9) + base["temp_offset"] + (sin_like(tick) * 1.4)
     gas = max(0, min(4095, round(1400 + random.gauss(0, 45) + base["gas_offset"] + (max(0, 10 - tick % 60) * 4))))
-    temperature_alarm = temperature > 29.0
+    temperature_alarm = temperature > 25.0
     door_open = bool(base.get("door_open", False)) if scenario != "demo" else bool(tick % 30 < 12)
     open_ticks = tick % 30 if scenario == "demo" else tick
     door_open_seconds = int(open_ticks * interval) if door_open else 0
